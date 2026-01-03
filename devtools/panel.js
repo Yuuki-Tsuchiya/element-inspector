@@ -10,12 +10,17 @@ const childCountEl = document.getElementById('childCount');
 const cssPropertiesEl = document.getElementById('cssProperties');
 const cssContentEl = document.getElementById('cssContent');
 const copyCSSBtn = document.getElementById('copyCSS');
+const styleTreeEl = document.getElementById('styleTree');
+const treeContentEl = document.getElementById('treeContent');
+const treeStatsEl = document.getElementById('treeStats');
+const copySASSBtn = document.getElementById('copySASS');
 const historyEl = document.getElementById('history');
 const historyListEl = document.getElementById('historyList');
 
 let isInspecting = false;
 let history = [];
 let currentStyles = {};
+let currentStyleTree = null;
 const MAX_HISTORY = 10;
 
 /**
@@ -166,6 +171,7 @@ function displayElementInfo(info) {
   if (!info) {
     elementInfoEl.classList.add('hidden');
     cssPropertiesEl.classList.add('hidden');
+    styleTreeEl.classList.add('hidden');
     return;
   }
 
@@ -185,6 +191,234 @@ function displayElementInfo(info) {
 
   // CSSプロパティを表示
   displayCSSProperties(info.styles);
+
+  // ツリー構造を表示
+  if (info.styleTree) {
+    displayStyleTree(info.styleTree);
+  }
+}
+
+/**
+ * ツリー内の要素数をカウント
+ */
+function countTreeNodes(node) {
+  if (!node) return 0;
+  let count = 1;
+  if (node.children && node.children.length > 0) {
+    node.children.forEach(child => {
+      count += countTreeNodes(child);
+    });
+  }
+  return count;
+}
+
+/**
+ * ツリーの最大深度を取得
+ */
+function getTreeMaxDepth(node, currentDepth = 0) {
+  if (!node) return currentDepth;
+  let maxDepth = currentDepth;
+  if (node.children && node.children.length > 0) {
+    node.children.forEach(child => {
+      const childDepth = getTreeMaxDepth(child, currentDepth + 1);
+      if (childDepth > maxDepth) {
+        maxDepth = childDepth;
+      }
+    });
+  }
+  return maxDepth;
+}
+
+/**
+ * ツリーノードのHTML要素を生成
+ */
+function createTreeNode(node) {
+  const nodeEl = document.createElement('div');
+  nodeEl.className = 'tree-node';
+
+  // ノードヘッダー（セレクタ + 展開/折りたたみ）
+  const headerEl = document.createElement('div');
+  headerEl.className = 'tree-node-header';
+
+  // 展開/折りたたみトグル
+  if (node.children && node.children.length > 0) {
+    const toggleEl = document.createElement('span');
+    toggleEl.className = 'tree-toggle expanded';
+    toggleEl.textContent = '▼';
+    toggleEl.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const childrenEl = nodeEl.querySelector('.tree-children');
+      if (childrenEl) {
+        childrenEl.classList.toggle('collapsed');
+        toggleEl.classList.toggle('expanded');
+        toggleEl.textContent = toggleEl.classList.contains('expanded') ? '▼' : '▶';
+      }
+    });
+    headerEl.appendChild(toggleEl);
+  } else {
+    const spacer = document.createElement('span');
+    spacer.className = 'tree-toggle-spacer';
+    headerEl.appendChild(spacer);
+  }
+
+  // セレクタ表示
+  const selectorEl = document.createElement('span');
+  selectorEl.className = 'tree-selector';
+
+  // タグ名
+  const tagSpan = document.createElement('span');
+  tagSpan.className = 'tree-tag';
+  tagSpan.textContent = node.tagName;
+  selectorEl.appendChild(tagSpan);
+
+  // ID
+  if (node.id) {
+    const idSpan = document.createElement('span');
+    idSpan.className = 'tree-id';
+    idSpan.textContent = `#${node.id}`;
+    selectorEl.appendChild(idSpan);
+  }
+
+  // クラス
+  if (node.classes && node.classes.length > 0) {
+    const classSpan = document.createElement('span');
+    classSpan.className = 'tree-class';
+    classSpan.textContent = `.${node.classes.join('.')}`;
+    selectorEl.appendChild(classSpan);
+  }
+
+  headerEl.appendChild(selectorEl);
+
+  // スタイル数
+  const styleCount = node.styles ? Object.keys(node.styles).length : 0;
+  if (styleCount > 0) {
+    const countEl = document.createElement('span');
+    countEl.className = 'tree-style-count';
+    countEl.textContent = `(${styleCount})`;
+    headerEl.appendChild(countEl);
+  }
+
+  nodeEl.appendChild(headerEl);
+
+  // 子要素
+  if (node.children && node.children.length > 0) {
+    const childrenEl = document.createElement('div');
+    childrenEl.className = 'tree-children';
+    node.children.forEach(child => {
+      childrenEl.appendChild(createTreeNode(child));
+    });
+    nodeEl.appendChild(childrenEl);
+  }
+
+  return nodeEl;
+}
+
+/**
+ * スタイルツリーを表示
+ */
+function displayStyleTree(tree) {
+  currentStyleTree = tree;
+
+  if (!tree) {
+    styleTreeEl.classList.add('hidden');
+    return;
+  }
+
+  // 統計情報を表示
+  const nodeCount = countTreeNodes(tree);
+  const maxDepth = getTreeMaxDepth(tree);
+  treeStatsEl.textContent = `${nodeCount}要素 / 深度${maxDepth}`;
+
+  // ツリーを描画
+  treeContentEl.innerHTML = '';
+  treeContentEl.appendChild(createTreeNode(tree));
+
+  styleTreeEl.classList.remove('hidden');
+}
+
+/**
+ * CSSプロパティ名をケバブケースからキャメルケースに変換しない（SASSはケバブケース）
+ */
+function formatCSSProperty(prop, value) {
+  return `${prop}: ${value};`;
+}
+
+/**
+ * ツリーをSASS形式に変換
+ */
+function treeToSASS(node, indent = 0) {
+  if (!node) return '';
+
+  const spaces = '  '.repeat(indent);
+  let output = '';
+
+  // セレクタを出力
+  output += `${spaces}${node.selector} {\n`;
+
+  // スタイルを出力
+  if (node.styles && Object.keys(node.styles).length > 0) {
+    Object.entries(node.styles).forEach(([prop, value]) => {
+      output += `${spaces}  ${formatCSSProperty(prop, value)}\n`;
+    });
+  }
+
+  // 子要素を再帰処理
+  if (node.children && node.children.length > 0) {
+    if (Object.keys(node.styles || {}).length > 0) {
+      output += '\n';
+    }
+    node.children.forEach(child => {
+      output += treeToSASS(child, indent + 1);
+    });
+  }
+
+  output += `${spaces}}\n`;
+
+  // ルートレベル以外は改行を追加
+  if (indent > 0) {
+    output += '\n';
+  }
+
+  return output;
+}
+
+/**
+ * SASSをクリップボードにコピー
+ */
+function copySASS() {
+  if (!currentStyleTree) {
+    return;
+  }
+
+  const sassText = treeToSASS(currentStyleTree);
+
+  // フォールバック: textareaを使用したコピー
+  const textarea = document.createElement('textarea');
+  textarea.value = sassText;
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    const successful = document.execCommand('copy');
+    if (successful) {
+      copySASSBtn.textContent = 'コピー完了!';
+    } else {
+      copySASSBtn.textContent = '失敗';
+    }
+  } catch (error) {
+    console.error('コピー失敗:', error);
+    copySASSBtn.textContent = '失敗';
+  }
+
+  document.body.removeChild(textarea);
+
+  setTimeout(() => {
+    copySASSBtn.textContent = 'SASSコピー';
+  }, 1500);
 }
 
 /**
@@ -280,6 +514,7 @@ async function init() {
 // イベントリスナー
 toggleBtn.addEventListener('click', toggleInspectMode);
 copyCSSBtn.addEventListener('click', copyCSS);
+copySASSBtn.addEventListener('click', copySASS);
 
 // 初期化実行
 init();

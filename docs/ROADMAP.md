@@ -46,7 +46,7 @@ Step 1          Step 2          Step 3          Step 4
   │               │               │               │
   ▼               ▼               ▼               ▼
 基本構造        スタイル        ツリー構造      最終形態
-  ✅              ✅
+  ✅              ✅              ✅              ✅
 ```
 
 ---
@@ -134,16 +134,19 @@ const DEFAULT_VALUES = {
 
 ---
 
-## Step 3: Nested Element Traversal
+## Step 3: Nested Element Traversal ✅ 完了
 
 ### 目標
 選択要素から子孫要素まで再帰的にCSS情報を取得する。
 
-### 追加機能
-- [ ] 子要素の再帰走査
-- [ ] ツリー構造データの構築
-- [ ] 深度制限オプション
-- [ ] 要素フィルタリング
+### 機能
+- [x] 子要素の再帰走査
+- [x] ツリー構造データの構築
+- [x] 深度制限（5階層まで）
+- [x] ツリープレビューUI（展開/折りたたみ対応）
+- [x] 統計情報表示（要素数、深度）
+- [x] ダークモード対応
+- [x] **SASSコピー機能**（ツリー全体をSASS形式でコピー）
 
 ### データ構造
 
@@ -184,24 +187,76 @@ function buildStyleTree(element, depth = 0, maxDepth = 5) {
 }
 ```
 
-### 課題
-- パフォーマンス（大量DOM対応）
-- セレクタ生成の正確性
-- 重複スタイルの最適化
+### 実装詳細
+
+#### セレクタ生成ロジック
+
+```javascript
+function generateSelector(element) {
+  // 優先順位: ID > クラス > タグ名
+  if (element.id) return `#${element.id}`;
+  if (element.classList.length > 0) return `.${element.classList[0]}`;
+  return element.tagName.toLowerCase();
+}
+```
+
+#### ツリー構造
+
+```javascript
+{
+  selector: '.container',
+  tagName: 'div',
+  id: null,
+  classes: ['container'],
+  styles: { display: 'flex', padding: '20px' },
+  children: [...],
+  depth: 0
+}
+```
+
+### 学習ポイント
+- 再帰処理によるDOM走査
+- ツリー構造のUI表示（展開/折りたたみ）
+- パフォーマンスを考慮した深度制限
+
+### 解決した課題
+- **深度制限**: MAX_DEPTH定数で5階層に制限
+- **UI可視化**: 展開/折りたたみ可能なツリービューを実装
+- **SASS出力**: treeToSASS()関数でネスト構造を再帰的に生成
+
+### SASS出力例
+
+```scss
+.container {
+  display: flex;
+  padding: 20px;
+
+  .header {
+    font-size: 24px;
+    color: #333;
+
+    .title {
+      font-weight: bold;
+    }
+  }
+}
+```
 
 ---
 
-## Step 4: SASS Formatter
+## Step 4: SASS Formatter ✅ 完了（Step 3に統合）
 
 ### 目標
 取得したスタイルツリーをSASS形式で出力する。
 
-### 追加機能
-- [ ] ツリー→SASSテキスト変換
-- [ ] インデント整形
-- [ ] 出力オプション（変数化など）
-- [ ] ファイルダウンロード
-- [ ] クリップボードコピー
+### 機能
+- [x] ツリー→SASSテキスト変換（`treeToSASS()`関数）
+- [x] インデント整形（2スペース）
+- [x] クリップボードコピー（SASSコピーボタン）
+- [ ] 出力オプション（変数化など）- 将来対応
+- [ ] ファイルダウンロード - 将来対応
+
+**注**: 基本的なSASS出力機能はStep 3で実装済み。追加オプション機能は将来の拡張として残す。
 
 ### 出力形式オプション
 
@@ -292,9 +347,9 @@ function treeToSass(node, indent = 0) {
 |---------------|------|------|
 | M1 | Step 1 完了（基本拡張機能 + DevToolsパネル） | ✅ 完了 |
 | M2 | Step 2 完了（CSS取得） | ✅ 完了 |
-| M3 | Step 3 完了（再帰走査） | 未着手 |
-| M4 | Step 4 完了（SASS出力） | 未着手 |
-| M5 | β版リリース | 未着手 |
+| M3 | Step 3 完了（再帰走査） | ✅ 完了 |
+| M4 | Step 4 完了（SASS出力） | ✅ 完了 |
+| M5 | β版リリース | 準備完了 |
 
 ---
 

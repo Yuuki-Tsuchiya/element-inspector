@@ -207,6 +207,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 - 要素情報の表示
 - **CSSプロパティの表示（Step 2）**
 - **クリップボードコピー機能（Step 2）**
+- **ツリー構造の表示（Step 3）**
+- **SASS形式変換・コピー（Step 3/4）**
 - 選択履歴の管理
 
 **主要な関数**:
@@ -240,6 +242,16 @@ function copyCSS() {
 function isColorValue(value) {
   return value.startsWith('rgb') || value.startsWith('#') || value.startsWith('hsl');
 }
+
+// ツリー表示（Step 3で追加）
+function displayStyleTree(tree) { /* ... */ }
+function createTreeNode(node) { /* ... */ }
+
+// SASS変換・コピー（Step 3/4で追加）
+function treeToSASS(node, indent = 0) {
+  // ツリー構造をSASS形式のネストに再帰変換
+}
+function copySASS() { /* ... */ }
 
 // 履歴管理
 function addToHistory(info) { /* ... */ }
@@ -427,12 +439,20 @@ function copyCSS() {
 
 ## 9. 将来の拡張性
 
-Step 3以降で追加予定の機能に対応できる設計:
+全Stepが完了。追加予定の機能:
 
-| Step | 機能 | 影響を受けるコンポーネント |
-|------|------|---------------------------|
-| ~~2~~ | ~~CSS取得~~ | ~~content.js に`getComputedStyle`処理追加~~ ✅完了 |
-| 3 | 子要素走査 | content.js に再帰処理追加 |
-| 4 | SASS出力 | 新規ユーティリティファイル追加 |
+| Step | 機能 | 状態 |
+|------|------|------|
+| ~~1~~ | ~~要素選択~~ | ✅完了 |
+| ~~2~~ | ~~CSS取得~~ | ✅完了 |
+| ~~3~~ | ~~子要素走査~~ | ✅完了 |
+| ~~4~~ | ~~SASS出力~~ | ✅完了 |
 
-`getElementInfo()`関数を拡張することで、追加情報の取得に対応可能。
+### 将来の拡張候補
+
+| 機能 | 説明 | 難易度 |
+|------|------|--------|
+| SASS変数化 | 色などを変数として出力 | 中 |
+| ファイルダウンロード | .scssファイルとして保存 | 低 |
+| 複数要素選択 | Ctrl+クリックで複数選択 | 中 |
+| プリセット | よく使うプロパティセット | 低 |

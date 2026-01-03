@@ -206,6 +206,122 @@ h2 {
   vertical-align: middle;
 }
 
+/* ツリー構造セクション */
+.style-tree {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.style-tree.hidden {
+  display: none;
+}
+
+.tree-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.tree-header h2 {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.tree-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tree-stats {
+  font-size: 11px;
+  color: #5f6368;
+}
+
+.tree-content {
+  max-height: 400px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.tree-node {
+  margin-left: 0;
+}
+
+.tree-children {
+  margin-left: 16px;
+  border-left: 1px solid #e0e0e0;
+  padding-left: 8px;
+}
+
+.tree-children.collapsed {
+  display: none;
+}
+
+.tree-node-header {
+  display: flex;
+  align-items: center;
+  padding: 3px 4px;
+  border-radius: 3px;
+  cursor: default;
+}
+
+.tree-node-header:hover {
+  background-color: rgba(26, 115, 232, 0.1);
+}
+
+.tree-toggle {
+  width: 16px;
+  font-size: 10px;
+  color: #5f6368;
+  cursor: pointer;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.tree-toggle:hover {
+  color: #1a73e8;
+}
+
+.tree-toggle-spacer {
+  width: 16px;
+  flex-shrink: 0;
+}
+
+.tree-selector {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-tag {
+  color: #1a73e8;
+  font-weight: 500;
+}
+
+.tree-id {
+  color: #e37400;
+}
+
+.tree-class {
+  color: #137333;
+}
+
+.tree-style-count {
+  margin-left: 8px;
+  color: #9aa0a6;
+  font-size: 10px;
+}
+
 /* 履歴セクション */
 .history {
   margin-top: 12px;
@@ -297,5 +413,50 @@ h2 {
 
   .history li:hover {
     background: #3c4043;
+  }
+
+  /* ツリー構造 ダークモード */
+  .style-tree {
+    background: #292a2d;
+  }
+
+  .tree-header {
+    border-bottom-color: #3c4043;
+  }
+
+  .tree-stats {
+    color: #9aa0a6;
+  }
+
+  .tree-children {
+    border-left-color: #3c4043;
+  }
+
+  .tree-node-header:hover {
+    background-color: rgba(138, 180, 248, 0.1);
+  }
+
+  .tree-toggle {
+    color: #9aa0a6;
+  }
+
+  .tree-toggle:hover {
+    color: #8ab4f8;
+  }
+
+  .tree-tag {
+    color: #8ab4f8;
+  }
+
+  .tree-id {
+    color: #fdd663;
+  }
+
+  .tree-class {
+    color: #81c995;
+  }
+
+  .tree-style-count {
+    color: #9aa0a6;
   }
 }

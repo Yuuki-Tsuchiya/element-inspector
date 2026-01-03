@@ -12,6 +12,9 @@
   let currentHighlightedElement = null;
   let lastElementInfo = null;
 
+  // 設定
+  const MAX_DEPTH = 5; // 最大走査深度
+
   // 主要CSSプロパティリスト
   const IMPORTANT_CSS_PROPERTIES = [
     // レイアウト
@@ -130,7 +133,29 @@
   }
 
   /**
-   * 要素情報を取得
+   * 要素のセレクタを生成
+   */
+  function generateSelector(element) {
+    const tagName = element.tagName.toLowerCase();
+
+    // IDがあればID優先
+    if (element.id) {
+      return `#${element.id}`;
+    }
+
+    // クラスがあればクラス使用
+    const classes = Array.from(element.classList)
+      .filter(c => !c.startsWith('element-inspector-'));
+    if (classes.length > 0) {
+      return `.${classes[0]}`;
+    }
+
+    // タグ名のみ
+    return tagName;
+  }
+
+  /**
+   * 要素情報を取得（単一要素）
    */
   function getElementInfo(element) {
     return {
@@ -141,6 +166,47 @@
       ),
       childCount: element.children.length,
       styles: getElementStyles(element)
+    };
+  }
+
+  /**
+   * スタイルツリーを構築（再帰走査）
+   */
+  function buildStyleTree(element, depth = 0) {
+    if (depth > MAX_DEPTH) return null;
+
+    const selector = generateSelector(element);
+    const styles = getElementStyles(element);
+    const tagName = element.tagName.toLowerCase();
+    const id = element.id || null;
+    const classes = Array.from(element.classList)
+      .filter(c => !c.startsWith('element-inspector-'));
+
+    const children = Array.from(element.children)
+      .map(child => buildStyleTree(child, depth + 1))
+      .filter(Boolean);
+
+    return {
+      selector,
+      tagName,
+      id,
+      classes,
+      styles,
+      children,
+      depth
+    };
+  }
+
+  /**
+   * 要素情報とスタイルツリーを取得
+   */
+  function getElementInfoWithTree(element) {
+    const basicInfo = getElementInfo(element);
+    const styleTree = buildStyleTree(element);
+
+    return {
+      ...basicInfo,
+      styleTree
     };
   }
 
@@ -183,12 +249,12 @@
     event.stopPropagation();
 
     const element = event.target;
-    lastElementInfo = getElementInfo(element);
+    lastElementInfo = getElementInfoWithTree(element);
 
     // 検査モードを終了
     stopInspectMode();
 
-    // ポップアップに通知
+    // DevToolsパネルに通知
     chrome.runtime.sendMessage({
       action: 'elementSelected',
       data: lastElementInfo
