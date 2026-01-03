@@ -1,0 +1,12 @@
+/* Element Inspector Lite - Content Styles */
+
+.element-inspector-highlight {
+  outline: 2px solid #1a73e8 !important;
+  outline-offset: -2px !important;
+  background-color: rgba(26, 115, 232, 0.1) !important;
+  cursor: crosshair !important;
+}
+
+.element-inspector-inspecting * {
+  cursor: crosshair !important;
+}

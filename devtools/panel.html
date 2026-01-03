@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Element Inspector</title>
+  <link rel="stylesheet" href="/devtools/panel.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Element Inspector</h1>
+      <div class="controls">
+        <button id="toggleInspect" class="btn btn-primary">検査開始</button>
+      </div>
+    </div>
+
+    <div id="status" class="status"></div>
+
+    <div id="elementInfo" class="element-info hidden">
+      <h2>要素情報</h2>
+      <div class="info-row">
+        <span class="label">タグ名:</span>
+        <span id="tagName" class="value">-</span>
+      </div>
+      <div class="info-row">
+        <span class="label">ID:</span>
+        <span id="elementId" class="value">-</span>
+      </div>
+      <div class="info-row">
+        <span class="label">クラス:</span>
+        <span id="classes" class="value">-</span>
+      </div>
+      <div class="info-row">
+        <span class="label">子要素数:</span>
+        <span id="childCount" class="value">-</span>
+      </div>
+    </div>
+
+    <div id="history" class="history hidden">
+      <h2>履歴</h2>
+      <ul id="historyList"></ul>
+    </div>
+  </div>
+
+  <script src="/devtools/panel.js"></script>
+</body>
+</html>

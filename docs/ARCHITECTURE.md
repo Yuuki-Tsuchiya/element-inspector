@@ -3,30 +3,41 @@
 ## 1. システム構成図
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Chrome Browser                          │
-│  ┌─────────────────┐    ┌─────────────────────────────────┐ │
-│  │     Popup       │    │          Web Page               │ │
-│  │  ┌───────────┐  │    │  ┌───────────────────────────┐  │ │
-│  │  │popup.html │  │    │  │     Content Script        │  │ │
-│  │  │popup.js   │  │    │  │     (content.js)          │  │ │
-│  │  │popup.css  │  │    │  │                           │  │ │
-│  │  └─────┬─────┘  │    │  │  - Event Listeners        │  │ │
-│  │        │        │    │  │  - DOM Manipulation       │  │ │
-│  │        │        │    │  │  - Element Info Getter    │  │ │
-│  │        │        │    │  └─────────────┬─────────────┘  │ │
-│  └────────┼────────┘    └───────────────┼───────────────┘ │
-│           │                             │                   │
-│           │    Chrome Message API       │                   │
-│           └─────────────────────────────┘                   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────────┐│
-│  │                    manifest.json                        ││
-│  │  - 権限設定 (permissions)                               ││
-│  │  - Content Script 登録                                  ││
-│  │  - Popup 設定                                          ││
-│  └─────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           Chrome Browser                                 │
+│                                                                         │
+│  ┌─────────────────┐    ┌─────────────────────────────────────────────┐ │
+│  │     Popup       │    │                  Web Page                   │ │
+│  │  ┌───────────┐  │    │  ┌───────────────────────────────────────┐  │ │
+│  │  │popup.html │  │    │  │           Content Script              │  │ │
+│  │  │popup.js   │  │    │  │           (content.js)                │  │ │
+│  │  │popup.css  │  │    │  │                                       │  │ │
+│  │  └───────────┘  │    │  │  - Event Listeners (hover, click)    │  │ │
+│  └─────────────────┘    │  │  - DOM Manipulation (highlight)       │  │ │
+│                         │  │  - Element Info Getter                │  │ │
+│  ┌─────────────────────────┐  └──────────────┬────────────────────┘  │ │
+│  │      DevTools Panel     │                 │                        │ │
+│  │  ┌───────────────────┐  │                 │                        │ │
+│  │  │  panel.html       │  │                 │                        │ │
+│  │  │  panel.js         │  │◄────────────────┘                        │ │
+│  │  │  panel.css        │  │   Chrome Message API                     │ │
+│  │  └───────────────────┘  │                                          │ │
+│  └─────────────────────────┘                                          │ │
+│           ▲                                                            │
+│           │                 ┌─────────────────────────────────────┐   │
+│           └─────────────────│         Background Script           │   │
+│              Message Forward│         (background.js)             │   │
+│                             │         Service Worker              │   │
+│                             └─────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────────┐│
+│  │                         manifest.json                               ││
+│  │  - 権限設定 (permissions: activeTab, scripting)                     ││
+│  │  - Content Script 登録                                              ││
+│  │  - DevTools Page 登録                                               ││
+│  │  - Background Service Worker 登録                                   ││
+│  └─────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -36,11 +47,18 @@
 ```
 element-inspector/
 ├── manifest.json          # 拡張機能の設定ファイル
+├── background.js          # Service Worker（メッセージ転送）
 ├── README.md              # プロジェクト説明
 ├── popup/
 │   ├── popup.html         # ポップアップUI
 │   ├── popup.js           # ポップアップのロジック
 │   └── popup.css          # ポップアップのスタイル
+├── devtools/
+│   ├── devtools.html      # DevTools初期化ページ
+│   ├── devtools.js        # DevToolsパネル作成
+│   ├── panel.html         # DevToolsパネルUI
+│   ├── panel.js           # DevToolsパネルロジック
+│   └── panel.css          # DevToolsパネルスタイル
 ├── content/
 │   ├── content.js         # ページに注入されるスクリプト
 │   └── content.css        # ハイライト用スタイル
@@ -69,41 +87,57 @@ Manifest V3形式の設定ファイル。
   "manifest_version": 3,
   "name": "Element Inspector Lite",
   "version": "1.0.0",
-  "description": "ページ上の要素情報を簡単に確認できる拡張機能",
+  "description": "Webページ上の要素をクリックして情報を表示するシンプルな拡張機能",
   "permissions": ["activeTab", "scripting"],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_icon": {
-      "16": "icons/icon16.png",
-      "48": "icons/icon48.png",
-      "128": "icons/icon128.png"
-    }
+    "default_icon": { ... }
   },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "devtools_page": "devtools/devtools.html",
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content/content.js"],
       "css": ["content/content.css"],
-      "run_at": "document_end"
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
     }
   ]
 }
 ```
 
-### 3.2 Content Script (content.js)
+### 3.2 Background Script (background.js)
 
 **責務**:
-- DOM要素のイベントリスニング（hover, click）
+- Content ScriptからDevToolsパネルへのメッセージ転送
+
+```javascript
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.action === 'elementSelected' || message.action === 'inspectCancelled') {
+    chrome.runtime.sendMessage(message);
+  }
+  sendResponse({ status: 'ok' });
+  return true;
+});
+```
+
+### 3.3 Content Script (content.js)
+
+**責務**:
+- DOM要素のイベントリスニング（hover, click, keydown）
 - 要素のハイライト表示
 - 要素情報の抽出
-- Popupとのメッセージ通信
+- Popup/DevToolsパネルとのメッセージ通信
 
 **主要な関数**:
 
 ```javascript
 // 状態管理
-let isInspectMode = false;
+let isInspecting = false;
 let currentHighlightedElement = null;
+let lastElementInfo = null;
 
 // 要素情報の取得
 function getElementInfo(element) {
@@ -122,20 +156,22 @@ function removeHighlight() { /* ... */ }
 // イベントハンドラ
 function handleMouseOver(e) { /* ... */ }
 function handleClick(e) { /* ... */ }
+function handleKeyDown(e) { /* ESCキーでキャンセル */ }
 
 // メッセージリスナー
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Popupからのコマンドを処理
+  // Popup/DevToolsからのコマンドを処理
 });
 ```
 
-### 3.3 Popup (popup.js)
+### 3.4 DevTools Panel (devtools/panel.js)
 
 **責務**:
-- UIの表示・更新
+- DevTools内でのUI表示・更新
 - ユーザーアクションの処理
 - Content Scriptへのメッセージ送信
 - 要素情報の表示
+- 選択履歴の管理
 
 **主要な関数**:
 
@@ -144,11 +180,23 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function toggleInspectMode() { /* ... */ }
 
 // 要素情報の表示更新
-function updateElementInfo(info) { /* ... */ }
+function displayElementInfo(info) { /* ... */ }
+
+// 履歴管理
+function addToHistory(info) { /* ... */ }
 
 // Content Scriptへメッセージ送信
-async function sendMessageToContentScript(message) { /* ... */ }
+async function sendMessageToContent(action) {
+  const tabId = chrome.devtools.inspectedWindow.tabId;
+  return chrome.tabs.sendMessage(tabId, { action });
+}
 ```
+
+### 3.5 Popup (popup.js)
+
+**責務**:
+- 簡易UIの表示（DevToolsを開かない場合向け）
+- Content Scriptへのメッセージ送信
 
 ---
 
@@ -157,75 +205,74 @@ async function sendMessageToContentScript(message) { /* ... */ }
 ### 4.1 Inspectモード開始フロー
 
 ```
-[Popup]                    [Content Script]
-   │                             │
-   │ 1. ボタンクリック            │
-   │──────────────────────────────>│
-   │    {action: "startInspect"}  │
-   │                             │
-   │                    2. モードON│
-   │                    イベント登録│
-   │                             │
-   │<──────────────────────────────│
-   │    {status: "started"}       │
-   │                             │
-   │ 3. UI更新                    │
+[DevTools Panel]           [Background]           [Content Script]
+       │                        │                        │
+       │ 1. ボタンクリック       │                        │
+       │────────────────────────────────────────────────>│
+       │         chrome.tabs.sendMessage                 │
+       │           {action: "startInspect"}              │
+       │                        │                        │
+       │                        │               2. モードON│
+       │                        │               イベント登録│
+       │                        │                        │
+       │<────────────────────────────────────────────────│
+       │              {status: "ok"}                     │
+       │                        │                        │
+       │ 3. UI更新              │                        │
 ```
 
 ### 4.2 要素選択フロー
 
 ```
-[Web Page]              [Content Script]              [Popup]
-    │                         │                          │
-    │ 1. 要素クリック           │                          │
-    │────────────────────────>│                          │
-    │                         │                          │
-    │                2. イベント│防止                      │
-    │                   情報取得│                          │
-    │                         │                          │
-    │                         │ 3. 情報送信                │
-    │                         │─────────────────────────>│
-    │                         │   {elementInfo: {...}}   │
-    │                         │                          │
-    │                         │                   4. 表示│
+[Web Page]          [Content Script]          [Background]          [DevTools Panel]
+    │                      │                       │                       │
+    │ 1. 要素クリック       │                       │                       │
+    │─────────────────────>│                       │                       │
+    │                      │                       │                       │
+    │             2. イベント防止                   │                       │
+    │                情報取得                       │                       │
+    │                      │                       │                       │
+    │                      │ 3. メッセージ送信      │                       │
+    │                      │──────────────────────>│                       │
+    │                      │ {action: elementSelected, data: {...}}        │
+    │                      │                       │                       │
+    │                      │                       │ 4. メッセージ転送     │
+    │                      │                       │──────────────────────>│
+    │                      │                       │                       │
+    │                      │                       │              5. 情報表示│
+    │                      │                       │                 履歴追加│
 ```
 
 ---
 
 ## 5. メッセージAPI仕様
 
-### 5.1 Popup → Content Script
+### 5.1 DevTools/Popup → Content Script
 
 #### startInspect
 ```javascript
-{
-  action: "startInspect"
-}
-// Response: { status: "started" }
+{ action: "startInspect" }
+// Response: { status: "ok" }
 ```
 
 #### stopInspect
 ```javascript
-{
-  action: "stopInspect"
-}
-// Response: { status: "stopped" }
+{ action: "stopInspect" }
+// Response: { status: "ok" }
 ```
 
 #### getStatus
 ```javascript
-{
-  action: "getStatus"
-}
-// Response: { isInspectMode: boolean }
+{ action: "getStatus" }
+// Response: { isInspecting: boolean, lastElementInfo: object|null }
 ```
 
-### 5.2 Content Script → Popup
+### 5.2 Content Script → Background → DevTools
 
 #### elementSelected
 ```javascript
 {
-  type: "elementSelected",
+  action: "elementSelected",
   data: {
     tagName: string,
     id: string | null,
@@ -233,6 +280,11 @@ async function sendMessageToContentScript(message) { /* ... */ }
     childCount: number
   }
 }
+```
+
+#### inspectCancelled
+```javascript
+{ action: "inspectCancelled" }
 ```
 
 ---
@@ -243,18 +295,21 @@ async function sendMessageToContentScript(message) { /* ... */ }
 
 ```css
 .element-inspector-highlight {
-  outline: 2px solid #007bff !important;
-  outline-offset: 2px !important;
-  background-color: rgba(0, 123, 255, 0.1) !important;
+  outline: 2px solid #1a73e8 !important;
+  outline-offset: -2px !important;
+  background-color: rgba(26, 115, 232, 0.1) !important;
+}
+
+.element-inspector-inspecting * {
+  cursor: crosshair !important;
 }
 ```
 
-### 6.2 ポップアップスタイル (popup.css)
+### 6.2 DevToolsパネルスタイル (panel.css)
 
-- 幅: 300px
-- パディング: 16px
 - フォント: system-ui
-- カラースキーム: ライトテーマ
+- カラースキーム: ライトテーマ + ダークモード対応
+- レスポンシブ対応
 
 ---
 

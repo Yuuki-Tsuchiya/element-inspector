@@ -16,19 +16,19 @@ Webページ上の要素を選択すると、その要素と子孫要素のCSS�
 .container {
   display: flex;
   padding: 20px;
-  
+
   .header {
     font-size: 24px;
     color: #333;
-    
+
     .title {
       font-weight: bold;
     }
   }
-  
+
   .content {
     flex: 1;
-    
+
     p {
       line-height: 1.6;
     }
@@ -46,34 +46,39 @@ Step 1          Step 2          Step 3          Step 4
   │               │               │               │
   ▼               ▼               ▼               ▼
 基本構造        スタイル        ツリー構造      最終形態
+  ✅
 ```
 
 ---
 
-## Step 1: Element Inspector Lite（現在）
+## Step 1: Element Inspector Lite ✅ 完了
 
 ### 目標
 Chrome拡張機能の基本を習得し、要素選択機能を実装する。
 
 ### 機能
 - [x] 拡張機能の基本構造
-- [ ] Inspectモード切り替え
-- [ ] ホバーハイライト
-- [ ] クリックで要素選択
-- [ ] 基本情報表示（タグ、ID、クラス、子要素数）
+- [x] Inspectモード切り替え
+- [x] ホバーハイライト
+- [x] クリックで要素選択
+- [x] 基本情報表示（タグ、ID、クラス、子要素数）
+- [x] **DevToolsパネル対応**（ポップアップ閉じる問題を解決）
+- [x] **ESCキーでキャンセル**
+- [x] **選択履歴機能**
+- [x] **ダークモード対応**
 
 ### 学習ポイント
 - Manifest V3 の構造
 - Content Script と Popup の通信
 - DOM イベント処理
 - Chrome Extensions API
+- **DevTools Panel API**
+- **Background Script (Service Worker) によるメッセージ転送**
 
 ### 成果物
 - 動作する拡張機能
 - 基本ドキュメント
-
-### 想定期間
-1〜2日
+- DevToolsパネル統合
 
 ---
 
@@ -94,21 +99,21 @@ Chrome拡張機能の基本を習得し、要素選択機能を実装する。
 function getElementStyles(element) {
   const computed = window.getComputedStyle(element);
   const styles = {};
-  
+
   // 重要なプロパティのみ抽出
   const importantProps = [
     'display', 'position', 'width', 'height',
     'margin', 'padding', 'color', 'background',
     'font-size', 'font-weight', 'border', 'flex'
   ];
-  
+
   importantProps.forEach(prop => {
     const value = computed.getPropertyValue(prop);
     if (value && value !== 'none' && value !== 'auto') {
       styles[prop] = value;
     }
   });
-  
+
   return styles;
 }
 ```
@@ -117,9 +122,6 @@ function getElementStyles(element) {
 - デフォルト値との区別
 - ショートハンドプロパティの扱い
 - 継承プロパティの処理
-
-### 想定期間
-2〜3日
 
 ---
 
@@ -161,14 +163,14 @@ function getElementStyles(element) {
 ```javascript
 function buildStyleTree(element, depth = 0, maxDepth = 5) {
   if (depth > maxDepth) return null;
-  
+
   const selector = generateSelector(element);
   const styles = getElementStyles(element);
-  
+
   const children = Array.from(element.children)
     .map(child => buildStyleTree(child, depth + 1, maxDepth))
     .filter(Boolean);
-  
+
   return { selector, styles, children };
 }
 ```
@@ -177,9 +179,6 @@ function buildStyleTree(element, depth = 0, maxDepth = 5) {
 - パフォーマンス（大量DOM対応）
 - セレクタ生成の正確性
 - 重複スタイルの最適化
-
-### 想定期間
-3〜4日
 
 ---
 
@@ -213,14 +212,14 @@ const outputOptions = {
 function treeToSass(node, indent = 0) {
   const spaces = '  '.repeat(indent);
   let output = '';
-  
+
   output += `${spaces}${node.selector} {\n`;
-  
+
   // スタイルを出力
   Object.entries(node.styles).forEach(([prop, value]) => {
     output += `${spaces}  ${prop}: ${value};\n`;
   });
-  
+
   // 子要素を再帰処理
   if (node.children.length > 0) {
     output += '\n';
@@ -228,7 +227,7 @@ function treeToSass(node, indent = 0) {
       output += treeToSass(child, indent + 1);
     });
   }
-  
+
   output += `${spaces}}\n`;
   return output;
 }
@@ -239,9 +238,6 @@ function treeToSass(node, indent = 0) {
 - シンタックスハイライト
 - ダウンロードボタン
 - オプション設定
-
-### 想定期間
-3〜4日
 
 ---
 
@@ -283,13 +279,13 @@ function treeToSass(node, indent = 0) {
 
 ## マイルストーン
 
-| マイルストーン | 内容 | 目標日 |
-|---------------|------|--------|
-| M1 | Step 1 完了（基本拡張機能） | Week 1 |
-| M2 | Step 2 完了（CSS取得） | Week 2 |
-| M3 | Step 3 完了（再帰走査） | Week 3 |
-| M4 | Step 4 完了（SASS出力） | Week 4 |
-| M5 | β版リリース | Week 5 |
+| マイルストーン | 内容 | 状態 |
+|---------------|------|------|
+| M1 | Step 1 完了（基本拡張機能 + DevToolsパネル） | ✅ 完了 |
+| M2 | Step 2 完了（CSS取得） | 未着手 |
+| M3 | Step 3 完了（再帰走査） | 未着手 |
+| M4 | Step 4 完了（SASS出力） | 未着手 |
+| M5 | β版リリース | 未着手 |
 
 ---
 
@@ -298,6 +294,7 @@ function treeToSass(node, indent = 0) {
 ### Chrome Extension
 - [Chrome Extensions Documentation](https://developer.chrome.com/docs/extensions/)
 - [Manifest V3 Migration Guide](https://developer.chrome.com/docs/extensions/mv3/intro/)
+- [DevTools Panels API](https://developer.chrome.com/docs/extensions/reference/devtools_panels/)
 
 ### CSS関連
 - [getComputedStyle() - MDN](https://developer.mozilla.org/ja/docs/Web/API/Window/getComputedStyle)
