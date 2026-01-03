@@ -12,6 +12,123 @@
   let currentHighlightedElement = null;
   let lastElementInfo = null;
 
+  // 主要CSSプロパティリスト
+  const IMPORTANT_CSS_PROPERTIES = [
+    // レイアウト
+    'display', 'position', 'top', 'right', 'bottom', 'left', 'z-index',
+    'float', 'clear',
+    // ボックスモデル
+    'width', 'height', 'min-width', 'max-width', 'min-height', 'max-height',
+    'margin', 'margin-top', 'margin-right', 'margin-bottom', 'margin-left',
+    'padding', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left',
+    'box-sizing',
+    // Flexbox
+    'flex', 'flex-direction', 'flex-wrap', 'justify-content', 'align-items', 'align-content',
+    'flex-grow', 'flex-shrink', 'flex-basis', 'align-self', 'gap',
+    // Grid
+    'grid-template-columns', 'grid-template-rows', 'grid-column', 'grid-row',
+    // テキスト
+    'color', 'font-family', 'font-size', 'font-weight', 'font-style',
+    'line-height', 'text-align', 'text-decoration', 'text-transform', 'letter-spacing',
+    // 背景
+    'background', 'background-color', 'background-image', 'background-size', 'background-position',
+    // ボーダー
+    'border', 'border-width', 'border-style', 'border-color', 'border-radius',
+    // その他
+    'opacity', 'visibility', 'overflow', 'cursor', 'box-shadow', 'transform', 'transition'
+  ];
+
+  // デフォルト値（フィルタリング用）
+  const DEFAULT_VALUES = {
+    'display': 'block',
+    'position': 'static',
+    'top': 'auto',
+    'right': 'auto',
+    'bottom': 'auto',
+    'left': 'auto',
+    'z-index': 'auto',
+    'float': 'none',
+    'clear': 'none',
+    'width': 'auto',
+    'height': 'auto',
+    'min-width': '0px',
+    'max-width': 'none',
+    'min-height': '0px',
+    'max-height': 'none',
+    'margin': '0px',
+    'margin-top': '0px',
+    'margin-right': '0px',
+    'margin-bottom': '0px',
+    'margin-left': '0px',
+    'padding': '0px',
+    'padding-top': '0px',
+    'padding-right': '0px',
+    'padding-bottom': '0px',
+    'padding-left': '0px',
+    'box-sizing': 'content-box',
+    'flex': '0 1 auto',
+    'flex-direction': 'row',
+    'flex-wrap': 'nowrap',
+    'justify-content': 'normal',
+    'align-items': 'normal',
+    'align-content': 'normal',
+    'flex-grow': '0',
+    'flex-shrink': '1',
+    'flex-basis': 'auto',
+    'align-self': 'auto',
+    'gap': 'normal',
+    'color': 'rgb(0, 0, 0)',
+    'font-style': 'normal',
+    'text-align': 'start',
+    'text-decoration': 'none',
+    'text-transform': 'none',
+    'letter-spacing': 'normal',
+    'background': 'none',
+    'background-color': 'rgba(0, 0, 0, 0)',
+    'background-image': 'none',
+    'background-size': 'auto',
+    'background-position': '0% 0%',
+    'border': 'none',
+    'border-width': '0px',
+    'border-style': 'none',
+    'border-color': 'rgb(0, 0, 0)',
+    'border-radius': '0px',
+    'opacity': '1',
+    'visibility': 'visible',
+    'overflow': 'visible',
+    'cursor': 'auto',
+    'box-shadow': 'none',
+    'transform': 'none',
+    'transition': 'none'
+  };
+
+  /**
+   * 要素のCSSスタイルを取得
+   */
+  function getElementStyles(element) {
+    const computed = window.getComputedStyle(element);
+    const styles = {};
+
+    IMPORTANT_CSS_PROPERTIES.forEach(prop => {
+      const value = computed.getPropertyValue(prop);
+      if (!value) return;
+
+      // デフォルト値と同じ場合はスキップ
+      const defaultValue = DEFAULT_VALUES[prop];
+      if (defaultValue && value === defaultValue) return;
+
+      // 空やnone系の値をスキップ
+      if (value === '' || value === 'none' || value === 'normal' || value === 'auto') {
+        // ただしdisplayのnoneは有効
+        if (prop !== 'display') return;
+      }
+
+      styles[prop] = value;
+    });
+
+    return styles;
+  }
+
   /**
    * 要素情報を取得
    */
@@ -22,7 +139,8 @@
       classes: Array.from(element.classList).filter(
         (c) => !c.startsWith('element-inspector-')
       ),
-      childCount: element.children.length
+      childCount: element.children.length,
+      styles: getElementStyles(element)
     };
   }
 

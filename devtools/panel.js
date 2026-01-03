@@ -7,11 +7,15 @@ const tagNameEl = document.getElementById('tagName');
 const elementIdEl = document.getElementById('elementId');
 const classesEl = document.getElementById('classes');
 const childCountEl = document.getElementById('childCount');
+const cssPropertiesEl = document.getElementById('cssProperties');
+const cssContentEl = document.getElementById('cssContent');
+const copyCSSBtn = document.getElementById('copyCSS');
 const historyEl = document.getElementById('history');
 const historyListEl = document.getElementById('historyList');
 
 let isInspecting = false;
 let history = [];
+let currentStyles = {};
 const MAX_HISTORY = 10;
 
 /**
@@ -53,11 +57,115 @@ function updateUI() {
 }
 
 /**
+ * CSSプロパティを表示
+ */
+function displayCSSProperties(styles) {
+  currentStyles = styles || {};
+
+  if (!styles || Object.keys(styles).length === 0) {
+    cssPropertiesEl.classList.add('hidden');
+    return;
+  }
+
+  cssContentEl.innerHTML = '';
+
+  Object.entries(styles).forEach(([prop, value]) => {
+    const row = document.createElement('div');
+    row.className = 'css-row';
+
+    const propSpan = document.createElement('span');
+    propSpan.className = 'css-prop';
+    propSpan.textContent = prop;
+
+    const colonSpan = document.createElement('span');
+    colonSpan.className = 'css-colon';
+    colonSpan.textContent = ': ';
+
+    const valueSpan = document.createElement('span');
+    valueSpan.className = 'css-value';
+    valueSpan.textContent = value;
+
+    // 色の場合はプレビューを表示
+    if (isColorValue(value)) {
+      const colorPreview = document.createElement('span');
+      colorPreview.className = 'color-preview';
+      colorPreview.style.backgroundColor = value;
+      valueSpan.insertBefore(colorPreview, valueSpan.firstChild);
+    }
+
+    const semicolonSpan = document.createElement('span');
+    semicolonSpan.className = 'css-semicolon';
+    semicolonSpan.textContent = ';';
+
+    row.appendChild(propSpan);
+    row.appendChild(colonSpan);
+    row.appendChild(valueSpan);
+    row.appendChild(semicolonSpan);
+    cssContentEl.appendChild(row);
+  });
+
+  cssPropertiesEl.classList.remove('hidden');
+}
+
+/**
+ * 色の値かどうかを判定
+ */
+function isColorValue(value) {
+  if (!value) return false;
+  return value.startsWith('rgb') ||
+         value.startsWith('rgba') ||
+         value.startsWith('#') ||
+         value.startsWith('hsl');
+}
+
+/**
+ * CSSをクリップボードにコピー（フォールバック対応）
+ */
+function copyCSS() {
+  if (!currentStyles || Object.keys(currentStyles).length === 0) {
+    return;
+  }
+
+  const cssText = Object.entries(currentStyles)
+    .map(([prop, value]) => `  ${prop}: ${value};`)
+    .join('\n');
+
+  // フォールバック: textareaを使用したコピー
+  const textarea = document.createElement('textarea');
+  textarea.value = cssText;
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  textarea.style.top = '0';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  try {
+    const successful = document.execCommand('copy');
+    if (successful) {
+      copyCSSBtn.textContent = 'コピー完了!';
+    } else {
+      copyCSSBtn.textContent = '失敗';
+    }
+  } catch (error) {
+    console.error('コピー失敗:', error);
+    copyCSSBtn.textContent = '失敗';
+  }
+
+  document.body.removeChild(textarea);
+
+  setTimeout(() => {
+    copyCSSBtn.textContent = 'コピー';
+  }, 1500);
+}
+
+/**
  * 要素情報を表示
  */
 function displayElementInfo(info) {
   if (!info) {
     elementInfoEl.classList.add('hidden');
+    cssPropertiesEl.classList.add('hidden');
     return;
   }
 
@@ -74,6 +182,9 @@ function displayElementInfo(info) {
   childCountEl.textContent = info.childCount;
 
   elementInfoEl.classList.remove('hidden');
+
+  // CSSプロパティを表示
+  displayCSSProperties(info.styles);
 }
 
 /**
@@ -168,6 +279,7 @@ async function init() {
 
 // イベントリスナー
 toggleBtn.addEventListener('click', toggleInspectMode);
+copyCSSBtn.addEventListener('click', copyCSS);
 
 // 初期化実行
 init();

@@ -46,7 +46,7 @@ Step 1          Step 2          Step 3          Step 4
   │               │               │               │
   ▼               ▼               ▼               ▼
 基本構造        スタイル        ツリー構造      最終形態
-  ✅
+  ✅              ✅
 ```
 
 ---
@@ -82,46 +82,55 @@ Chrome拡張機能の基本を習得し、要素選択機能を実装する。
 
 ---
 
-## Step 2: CSS Property Inspector
+## Step 2: CSS Property Inspector ✅ 完了
 
 ### 目標
 選択した要素のCSSプロパティを取得・表示する。
 
-### 追加機能
-- [ ] `getComputedStyle()` でCSS取得
-- [ ] 重要なプロパティのフィルタリング
-- [ ] CSS値の表示UI
-- [ ] コピー機能
+### 機能
+- [x] `getComputedStyle()` でCSS取得
+- [x] 主要プロパティのフィルタリング（約50種類）
+- [x] デフォルト値の非表示（意味のある値のみ表示）
+- [x] CSS値の表示UI（シンタックスハイライト風）
+- [x] 色プレビュー表示
+- [x] コピー機能（`document.execCommand` フォールバック対応）
+- [x] ダークモード対応
 
-### 実装イメージ
+### 実装詳細
+
+#### 取得するCSSプロパティ（主要約50種類）
+
+| カテゴリ | プロパティ |
+|----------|-----------|
+| レイアウト | display, position, top, right, bottom, left, z-index, float, clear |
+| ボックスモデル | width, height, min-*, max-*, margin-*, padding-*, box-sizing |
+| Flexbox | flex, flex-direction, flex-wrap, justify-content, align-items, gap |
+| Grid | grid-template-columns, grid-template-rows, grid-column, grid-row |
+| テキスト | color, font-family, font-size, font-weight, line-height, text-align |
+| 背景 | background, background-color, background-image, background-size |
+| ボーダー | border, border-width, border-style, border-color, border-radius |
+| その他 | opacity, visibility, overflow, cursor, box-shadow, transform, transition |
+
+#### デフォルト値フィルタリング
 
 ```javascript
-function getElementStyles(element) {
-  const computed = window.getComputedStyle(element);
-  const styles = {};
-
-  // 重要なプロパティのみ抽出
-  const importantProps = [
-    'display', 'position', 'width', 'height',
-    'margin', 'padding', 'color', 'background',
-    'font-size', 'font-weight', 'border', 'flex'
-  ];
-
-  importantProps.forEach(prop => {
-    const value = computed.getPropertyValue(prop);
-    if (value && value !== 'none' && value !== 'auto') {
-      styles[prop] = value;
-    }
-  });
-
-  return styles;
-}
+// デフォルト値と同じ場合はスキップ
+const DEFAULT_VALUES = {
+  'display': 'block',
+  'position': 'static',
+  'margin-top': '0px',
+  // ... 約40種類のデフォルト値を定義
+};
 ```
 
-### 課題
-- デフォルト値との区別
-- ショートハンドプロパティの扱い
-- 継承プロパティの処理
+### 学習ポイント
+- `window.getComputedStyle()` API
+- DevToolsパネルでのクリップボードAPI制限と回避策
+- CSSプロパティのデフォルト値の理解
+
+### 解決した課題
+- **デフォルト値との区別**: デフォルト値リストを定義してフィルタリング
+- **クリップボードAPI制限**: `document.execCommand('copy')` でフォールバック対応
 
 ---
 
@@ -282,7 +291,7 @@ function treeToSass(node, indent = 0) {
 | マイルストーン | 内容 | 状態 |
 |---------------|------|------|
 | M1 | Step 1 完了（基本拡張機能 + DevToolsパネル） | ✅ 完了 |
-| M2 | Step 2 完了（CSS取得） | 未着手 |
+| M2 | Step 2 完了（CSS取得） | ✅ 完了 |
 | M3 | Step 3 完了（再帰走査） | 未着手 |
 | M4 | Step 4 完了（SASS出力） | 未着手 |
 | M5 | β版リリース | 未着手 |

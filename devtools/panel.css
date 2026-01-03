@@ -128,6 +128,85 @@ h2 {
   color: #137333;
 }
 
+/* CSSプロパティセクション */
+.css-properties {
+  background: #f8f9fa;
+  border-radius: 6px;
+  padding: 10px;
+  margin-bottom: 12px;
+}
+
+.css-properties.hidden {
+  display: none;
+}
+
+.css-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.css-header h2 {
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.btn-small {
+  padding: 4px 8px;
+  font-size: 11px;
+  background-color: #5f6368;
+  color: #fff;
+}
+
+.btn-small:hover {
+  background-color: #3c4043;
+}
+
+.css-content {
+  max-height: 300px;
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.css-row {
+  padding: 2px 0;
+}
+
+.css-row:hover {
+  background-color: rgba(26, 115, 232, 0.1);
+}
+
+.css-prop {
+  color: #9c27b0;
+}
+
+.css-colon {
+  color: #333;
+}
+
+.css-value {
+  color: #1a73e8;
+}
+
+.css-semicolon {
+  color: #333;
+}
+
+.color-preview {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+
+/* 履歴セクション */
 .history {
   margin-top: 12px;
 }
@@ -181,6 +260,35 @@ h2 {
 
   .value {
     color: #e8eaed;
+  }
+
+  .css-properties {
+    background: #292a2d;
+  }
+
+  .css-row:hover {
+    background-color: rgba(138, 180, 248, 0.1);
+  }
+
+  .css-prop {
+    color: #c792ea;
+  }
+
+  .css-colon,
+  .css-semicolon {
+    color: #9aa0a6;
+  }
+
+  .css-value {
+    color: #8ab4f8;
+  }
+
+  .btn-small {
+    background-color: #3c4043;
+  }
+
+  .btn-small:hover {
+    background-color: #5f6368;
   }
 
   .history li {

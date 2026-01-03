@@ -129,6 +129,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 - DOM要素のイベントリスニング（hover, click, keydown）
 - 要素のハイライト表示
 - 要素情報の抽出
+- **CSSプロパティの取得（Step 2）**
 - Popup/DevToolsパネルとのメッセージ通信
 
 **主要な関数**:
@@ -139,13 +140,46 @@ let isInspecting = false;
 let currentHighlightedElement = null;
 let lastElementInfo = null;
 
+// 主要CSSプロパティリスト（約50種類）
+const IMPORTANT_CSS_PROPERTIES = [
+  'display', 'position', 'top', 'right', 'bottom', 'left', 'z-index',
+  'width', 'height', 'margin', 'padding', 'color', 'font-family',
+  'font-size', 'background-color', 'border', 'border-radius',
+  'flex', 'flex-direction', 'justify-content', 'align-items', 'gap',
+  // ... その他約30種類
+];
+
+// デフォルト値フィルタリング用
+const DEFAULT_VALUES = {
+  'display': 'block',
+  'position': 'static',
+  'margin-top': '0px',
+  // ... 約40種類
+};
+
+// CSSスタイルの取得（Step 2で追加）
+function getElementStyles(element) {
+  const computed = window.getComputedStyle(element);
+  const styles = {};
+  IMPORTANT_CSS_PROPERTIES.forEach(prop => {
+    const value = computed.getPropertyValue(prop);
+    // デフォルト値と同じ場合はスキップ
+    if (DEFAULT_VALUES[prop] && value === DEFAULT_VALUES[prop]) return;
+    if (value && value !== 'none' && value !== 'normal' && value !== 'auto') {
+      styles[prop] = value;
+    }
+  });
+  return styles;
+}
+
 // 要素情報の取得
 function getElementInfo(element) {
   return {
     tagName: element.tagName.toLowerCase(),
     id: element.id || null,
     classes: Array.from(element.classList),
-    childCount: element.children.length
+    childCount: element.children.length,
+    styles: getElementStyles(element)  // Step 2で追加
   };
 }
 
@@ -171,6 +205,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 - ユーザーアクションの処理
 - Content Scriptへのメッセージ送信
 - 要素情報の表示
+- **CSSプロパティの表示（Step 2）**
+- **クリップボードコピー機能（Step 2）**
 - 選択履歴の管理
 
 **主要な関数**:
@@ -181,6 +217,29 @@ async function toggleInspectMode() { /* ... */ }
 
 // 要素情報の表示更新
 function displayElementInfo(info) { /* ... */ }
+
+// CSSプロパティの表示（Step 2で追加）
+function displayCSSProperties(styles) {
+  // シンタックスハイライト風にCSS表示
+  // 色の値にはカラープレビュー表示
+}
+
+// クリップボードコピー（Step 2で追加）
+function copyCSS() {
+  // DevToolsパネルでは navigator.clipboard APIが制限されるため
+  // document.execCommand('copy') でフォールバック対応
+  const textarea = document.createElement('textarea');
+  textarea.value = cssText;
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+
+// 色の値判定（Step 2で追加）
+function isColorValue(value) {
+  return value.startsWith('rgb') || value.startsWith('#') || value.startsWith('hsl');
+}
 
 // 履歴管理
 function addToHistory(info) { /* ... */ }
@@ -277,7 +336,10 @@ async function sendMessageToContent(action) {
     tagName: string,
     id: string | null,
     classes: string[],
-    childCount: number
+    childCount: number,
+    styles: {              // Step 2で追加
+      [property: string]: string
+    }
   }
 }
 ```
@@ -330,13 +392,46 @@ async function sendMessageToContent(action) {
 
 ---
 
-## 8. 将来の拡張性
+## 8. 技術的な解決策
 
-Step 2以降で追加予定の機能に対応できる設計:
+### 8.1 DevToolsパネルでのクリップボードAPI制限
+
+**問題**: DevToolsパネルのコンテキストでは `navigator.clipboard.writeText()` APIがセキュリティ制限により動作しない。
+
+**解決策**: `document.execCommand('copy')` を使用したフォールバック実装。
+
+```javascript
+function copyCSS() {
+  const textarea = document.createElement('textarea');
+  textarea.value = cssText;
+  textarea.style.position = 'fixed';
+  textarea.style.left = '-9999px';
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+  document.execCommand('copy');
+  document.body.removeChild(textarea);
+}
+```
+
+### 8.2 CSSデフォルト値のフィルタリング
+
+**問題**: `getComputedStyle()` はすべてのプロパティのデフォルト値も返すため、意味のある値のみを抽出する必要がある。
+
+**解決策**:
+1. 主要CSSプロパティのホワイトリスト（約50種類）を定義
+2. デフォルト値のマッピング（約40種類）を定義
+3. 取得した値とデフォルト値を比較してフィルタリング
+
+---
+
+## 9. 将来の拡張性
+
+Step 3以降で追加予定の機能に対応できる設計:
 
 | Step | 機能 | 影響を受けるコンポーネント |
 |------|------|---------------------------|
-| 2 | CSS取得 | content.js に`getComputedStyle`処理追加 |
+| ~~2~~ | ~~CSS取得~~ | ~~content.js に`getComputedStyle`処理追加~~ ✅完了 |
 | 3 | 子要素走査 | content.js に再帰処理追加 |
 | 4 | SASS出力 | 新規ユーティリティファイル追加 |
 

@@ -88,14 +88,47 @@ Chrome拡張機能開発の基礎を学びながら、Webページの要素情�
   - [x] 履歴をクリックで再表示
   - [x] セレクタ形式で表示（`<tag>#id.class`）
 
-### 2.2 任意機能（Nice to Have）
+### 2.2 Step 2機能（CSS Property Inspector）✅ 完了
 
-#### FR-008: セレクタ生成
+#### FR-008: CSSプロパティ取得
+- **説明**: 選択した要素のCSSプロパティを`getComputedStyle()`で取得する
+- **取得項目**: 主要プロパティ約50種類
+  - レイアウト: display, position, top, right, bottom, left, z-index, float, clear
+  - ボックスモデル: width, height, min-*, max-*, margin-*, padding-*, box-sizing
+  - Flexbox: flex, flex-direction, flex-wrap, justify-content, align-items, gap
+  - Grid: grid-template-columns, grid-template-rows, grid-column, grid-row
+  - テキスト: color, font-family, font-size, font-weight, line-height, text-align
+  - 背景: background, background-color, background-image, background-size
+  - ボーダー: border, border-width, border-style, border-color, border-radius
+  - その他: opacity, visibility, overflow, cursor, box-shadow, transform, transition
+- **受け入れ基準**:
+  - [x] `getComputedStyle()`でCSSプロパティを取得
+  - [x] 主要プロパティのみをフィルタリング
+  - [x] デフォルト値は非表示
+
+#### FR-009: CSS表示UI
+- **説明**: CSSプロパティをシンタックスハイライト風に表示する
+- **入力**: CSSプロパティオブジェクト
+- **出力**: スタイル付きのCSS表示
+- **受け入れ基準**:
+  - [x] プロパティ名と値を色分け表示
+  - [x] 色の値にはカラープレビュー表示
+  - [x] ダークモード対応
+
+#### FR-010: CSSコピー機能
+- **説明**: 取得したCSSプロパティをクリップボードにコピーする
+- **入力**: コピーボタンクリック
+- **出力**: クリップボードへの書き込み
+- **受け入れ基準**:
+  - [x] コピーボタンでCSSをコピー
+  - [x] コピー完了時にフィードバック表示
+  - [x] DevToolsパネルでも動作（`document.execCommand`フォールバック）
+
+### 2.3 任意機能（Nice to Have）
+
+#### FR-011: セレクタ生成
 - **説明**: 選択した要素のCSSセレクタを自動生成する
 - **出力例**: `div#main > ul.nav-list`
-
-#### FR-009: コピー機能
-- **説明**: 表示された情報をクリップボードにコピーできる
 
 ---
 
@@ -129,7 +162,7 @@ Chrome拡張機能開発の基礎を学びながら、Webページの要素情�
 
 ### 4.2 対象外（スコープ外）
 - Firefox/Safari など他ブラウザ対応
-- CSS情報の取得（Step 2以降で実装）
+- ~~CSS情報の取得（Step 2以降で実装）~~ → ✅ Step 2で実装完了
 - ネスト構造の解析（Step 3以降で実装）
 - SASS形式出力（Step 4で実装）
 
@@ -150,6 +183,7 @@ Chrome拡張機能開発の基礎を学びながら、Webページの要素情�
 
 ## 6. 成功指標
 
+### Step 1 (Element Inspector Lite)
 1. ✅ 拡張機能がChromeに正常にインストールできる
 2. ✅ 任意のWebサイトで要素選択が動作する
 3. ✅ 選択した要素の情報が正しく表示される
@@ -157,3 +191,10 @@ Chrome拡張機能開発の基礎を学びながら、Webページの要素情�
 5. ✅ DevToolsパネルで情報が継続的に表示される（ポップアップが閉じる問題を解決）
 6. ✅ ESCキーでキャンセルできる
 7. ✅ 選択履歴が保持される
+
+### Step 2 (CSS Property Inspector)
+8. ✅ 選択した要素のCSSプロパティが取得・表示される
+9. ✅ デフォルト値がフィルタリングされ、意味のある値のみ表示される
+10. ✅ CSSプロパティをクリップボードにコピーできる
+11. ✅ 色の値にカラープレビューが表示される
+12. ✅ ダークモードで適切に表示される
