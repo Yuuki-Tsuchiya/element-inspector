@@ -256,73 +256,141 @@ function generateSelector(element) {
 - [ ] 出力オプション（変数化など）- 将来対応
 - [ ] ファイルダウンロード - 将来対応
 
-**注**: 基本的なSASS出力機能はStep 3で実装済み。追加オプション機能は将来の拡張として残す。
+**注**: 基本的なSASS出力機能はStep 3で実装済み。
 
-### 出力形式オプション
+---
 
+## 完了したコア機能まとめ
+
+| Step | 機能 | 状態 |
+|------|------|------|
+| 1 | 要素選択・ハイライト・DevToolsパネル | ✅ 完了 |
+| 2 | CSS取得・フィルタリング・コピー | ✅ 完了 |
+| 3 | 再帰走査・ツリー表示 | ✅ 完了 |
+| 4 | SASS形式変換・コピー | ✅ 完了 |
+
+---
+
+## 拡張機能
+
+### Source Map連携 ✅ 完了
+
+CSSファイルの.css.mapを自動検出し、実際にSASSで定義されたプロパティのみを抽出。
+
+#### 実装内容
+- [x] CSSファイルから`sourceMappingURL`コメントを自動検出
+- [x] 複数CSSファイル対応
+- [x] Source Mapの`sourcesContent`からプロパティ名を抽出
+- [x] DevToolsパネルにステータス表示
+- [x] Source Mapがあれば自動的にフィルタリング
+- [x] **完全なセレクタパスでのマッチング**（祖先チェーンを考慮）
+- [x] **汎用セレクタ除外**（リセットCSS対策: `*`, `div`, `p`等をスキップ）
+- [x] **メインSCSSファイルのみ対象**（パーシャルファイルは除外）
+
+#### 技術詳細
 ```javascript
-const outputOptions = {
-  format: 'scss',        // 'scss' | 'css'
-  indent: 2,             // インデントスペース数
-  includeEmpty: false,   // スタイルなし要素を含む
-  useVariables: false,   // 色などを変数化
-  selectorType: 'class'  // 'class' | 'tag' | 'full'
-};
-```
+// CSSファイルからSource Map URLを検出
+const match = cssText.match(/\/\*#\s*sourceMappingURL=(.+?)\s*\*\//);
 
-### 変換ロジック
+// セレクタごとのプロパティをパース
+function parseCSSForSelectors(cssText) {
+  // セレクタ → プロパティセットのマッピングを構築
+}
 
-```javascript
-function treeToSass(node, indent = 0) {
-  const spaces = '  '.repeat(indent);
-  let output = '';
-
-  output += `${spaces}${node.selector} {\n`;
-
-  // スタイルを出力
-  Object.entries(node.styles).forEach(([prop, value]) => {
-    output += `${spaces}  ${prop}: ${value};\n`;
-  });
-
-  // 子要素を再帰処理
-  if (node.children.length > 0) {
-    output += '\n';
-    node.children.forEach(child => {
-      output += treeToSass(child, indent + 1);
-    });
-  }
-
-  output += `${spaces}}\n`;
-  return output;
+// 要素がセレクタにマッチするか判定（祖先チェーン考慮）
+function elementMatchesCssSelector(element, cssSelector) {
+  // 子孫コンビネータ、子コンビネータを処理
 }
 ```
 
-### UI追加
-- SASS出力パネル
-- シンタックスハイライト
-- ダウンロードボタン
-- オプション設定
+---
+
+### 擬似要素対応 ✅ 完了
+
+`::before`, `::after`の擬似要素をSASS出力に含める。
+
+#### 実装内容
+- [x] CSSから擬似要素ルールを抽出（`:before`と`::before`両対応）
+- [x] 親セレクタと擬似要素のマッピング
+- [x] SASS出力で`&::before`, `&::after`としてネスト表示
+
+#### 出力例
+```scss
+.box-title-spot {
+  padding-bottom: 25px;
+  margin-bottom: 38px;
+  position: relative;
+
+  &::after {
+    content: "";
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 1px;
+    background-color: #e5e5e5;
+  }
+}
+```
 
 ---
 
-## オプション機能（将来）
+### 色のHEX形式変換 ✅ 完了
 
-### Step 5+: 拡張機能
+ブラウザが返す`rgb()`形式を`#ffffff`形式に自動変換。
 
-優先度順:
+#### 実装内容
+- [x] `rgb(255, 255, 255)` → `#ffffff`
+- [x] `rgba(255, 255, 255, 1)` → `#ffffff`（透明度1の場合）
+- [x] `rgba(255, 255, 255, 0.5)` → そのまま維持（透明度がある場合）
+- [x] `box-shadow`等の複合値内の色も変換対応
+
+#### 対象プロパティ
+- `color`, `background-color`, `border-color`
+- `border-top-color`, `border-right-color`, `border-bottom-color`, `border-left-color`
+- `outline-color`, `text-decoration-color`, `box-shadow`
+
+---
+
+### セレクタ生成の改善 ✅ 完了
+
+タグ名を適切にセレクタに含める。
+
+#### 実装内容
+- [x] `div`要素: `.class-name`（タグ名省略）
+- [x] それ以外: `h2.class-name`, `p.class-name`, `span.class-name`等
+
+---
+
+## 将来の拡張候補（オプション）
+
+以下は追加機能候補です。
+
+### 優先度: 高
 
 | 機能 | 説明 | 難易度 |
 |------|------|--------|
-| Source Map連携 | SASSの元ファイル行数表示 | 高 |
-| 差分抽出 | デフォルトとの差分のみ出力 | 中 |
+| **@include/@mixin展開** | パーシャルファイル（_mixins.scss等）の@includeを解析してプロパティ抽出 | 高 |
+| ファイルダウンロード | .scssファイルとして保存 | 低 |
+| SASS変数化 | 色などを`$variable`として出力 | 中 |
+
+### 優先度: 中
+
+| 機能 | 説明 | 難易度 |
+|------|------|--------|
+| メディアクエリ検出 | レスポンシブ対応 | 高 |
 | 複数要素選択 | Ctrl+クリックで複数選択 | 中 |
 | プリセット | よく使うプロパティセット | 低 |
-| エクスポート | .scssファイル出力 | 低 |
-| 履歴機能 | 過去の選択を保存 | 中 |
+
+### 優先度: 低
+
+| 機能 | 説明 | 難易度 |
+|------|------|--------|
+| CSS変数対応 | カスタムプロパティの抽出 | 中 |
 
 ---
 
-## 技術的な注意点
+## 技術的な注意点（将来対応時の参考）
 
 ### パフォーマンス
 - 大規模DOMでの走査時間
@@ -349,7 +417,7 @@ function treeToSass(node, indent = 0) {
 | M2 | Step 2 完了（CSS取得） | ✅ 完了 |
 | M3 | Step 3 完了（再帰走査） | ✅ 完了 |
 | M4 | Step 4 完了（SASS出力） | ✅ 完了 |
-| M5 | β版リリース | 準備完了 |
+| M5 | β版リリース | ✅ 準備完了 |
 
 ---
 

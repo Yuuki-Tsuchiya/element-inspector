@@ -78,6 +78,53 @@ h2 {
   margin-bottom: 12px;
 }
 
+/* Source Map ステータス */
+.source-map-status {
+  background: #f0f4f9;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-bottom: 12px;
+  border-left: 3px solid #9aa0a6;
+}
+
+.source-map-status.hidden {
+  display: none;
+}
+
+.source-map-status.active {
+  background: #e8f5e9;
+  border-left-color: #34a853;
+}
+
+.source-map-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.source-map-header .btn-small {
+  margin-left: auto;
+}
+
+.source-map-status.loading .source-map-info {
+  color: #f9ab00;
+  font-style: italic;
+}
+
+.source-map-icon {
+  font-size: 14px;
+}
+
+.source-map-info {
+  font-size: 11px;
+  color: #5f6368;
+}
+
+.source-map-status.active .source-map-info {
+  color: #1e8e3e;
+  font-weight: 500;
+}
+
 .status.inspecting {
   color: #1a73e8;
   font-weight: 500;
@@ -458,5 +505,33 @@ h2 {
 
   .tree-style-count {
     color: #9aa0a6;
+  }
+
+  /* Source Map ダークモード */
+  .source-map-status {
+    background: #292a2d;
+    border-left-color: #5f6368;
+  }
+
+  .source-map-status.active {
+    background: #1e3a29;
+    border-left-color: #81c995;
+  }
+
+  .source-map-info {
+    color: #9aa0a6;
+  }
+
+  .source-map-status.active .source-map-info {
+    color: #81c995;
+  }
+
+  .source-map-status.loading {
+    background: #332d1a;
+    border-left-color: #f9ab00;
+  }
+
+  .source-map-status.loading .source-map-info {
+    color: #fdd663;
   }
 }

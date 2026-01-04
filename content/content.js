@@ -15,6 +15,12 @@
   // 設定
   const MAX_DEPTH = 5; // 最大走査深度
 
+  // Source Map キャッシュ
+  let sourceMapCache = null;
+  let sourceMapProperties = null; // Source Mapから抽出したプロパティセット
+  let sourceMapPropertiesByCss = {}; // CSSファイルごとのプロパティセット
+  let selectorPropertiesMap = {}; // セレクタごとのプロパティマップ
+
   // 主要CSSプロパティリスト
   const IMPORTANT_CSS_PROPERTIES = [
     // レイアウト
@@ -106,6 +112,561 @@
   };
 
   /**
+   * Background Service Worker経由でfetch（CORS回避）
+   */
+  async function fetchViaBackground(url) {
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage({ action: 'fetchUrl', url: url }, response => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        if (response && response.status === 'ok') {
+          resolve(response.data);
+        } else {
+          reject(new Error(response ? response.error : 'Unknown error'));
+        }
+      });
+    });
+  }
+
+  // 完全なCSSルールを保存（セレクタ全体 → プロパティ）
+  let fullSelectorRules = [];
+  // 擬似要素ルールを保存（セレクタ → 擬似要素 → プロパティ）
+  let pseudoElementRules = [];
+
+  /**
+   * CSSテキストを解析してセレクタごとのプロパティを抽出
+   */
+  function parseCSSForSelectors(cssText) {
+    const result = {};
+    const rules = [];
+    const pseudoRules = [];
+
+    // コメントを先に除去
+    let cleanCss = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
+
+    // @で始まるアットルール内のルールも処理するため、
+    // メディアクエリなどは除去せずにそのまま処理する
+    // ただし@keyframesと@font-faceは除去
+    cleanCss = cleanCss.replace(/@keyframes\s+[\w-]+\s*\{[^{}]*(\{[^{}]*\}[^{}]*)*\}/g, '');
+    cleanCss = cleanCss.replace(/@font-face\s*\{[^}]*\}/g, '');
+
+    // セレクタとプロパティを抽出
+    // パターン: selector { property: value; ... }
+    const ruleRegex = /([^{}]+)\{([^{}]+)\}/g;
+    let match;
+
+    while ((match = ruleRegex.exec(cleanCss)) !== null) {
+      const selectorPart = match[1].trim();
+      const propertiesPart = match[2].trim();
+
+      // セレクタを分割（カンマ区切り）
+      const selectors = selectorPart.split(',').map(s => s.trim()).filter(Boolean);
+
+      // プロパティを抽出（値も含めて）
+      const properties = new Set();
+      const propertiesWithValues = {};
+      const propValueMatches = propertiesPart.matchAll(/([\w-]+)\s*:\s*([^;]+)/g);
+      for (const propMatch of propValueMatches) {
+        const prop = propMatch[1].toLowerCase();
+        const value = propMatch[2].trim();
+        if (IMPORTANT_CSS_PROPERTIES.includes(prop) || prop === 'content') {
+          properties.add(prop);
+          propertiesWithValues[prop] = value;
+        }
+      }
+
+      if (properties.size === 0) continue;
+
+      // 各セレクタをルールとして保存
+      for (const selector of selectors) {
+        // 擬似要素（::before, ::after等）を含むセレクタを検出
+        const pseudoMatch = selector.match(/::?(before|after)/i);
+        if (pseudoMatch) {
+          // 擬似要素ルールとして保存
+          const pseudoElement = '::' + pseudoMatch[1].toLowerCase();
+          // 擬似要素を除去して親セレクタを取得
+          const parentSelector = selector.replace(/::?(before|after)/i, '').trim();
+
+          // 擬似クラスを除去
+          const cleanParentSelector = parentSelector.replace(/:[\w-]+(\([^)]*\))?/g, '');
+
+          // 汎用セレクタチェック
+          const trimmedSelector = cleanParentSelector.trim();
+          if (!trimmedSelector) continue;
+          if (trimmedSelector === '*') continue;
+          if (trimmedSelector.startsWith('@')) continue;
+          if (!trimmedSelector.includes('.') && !trimmedSelector.includes('#')) continue;
+
+          pseudoRules.push({
+            parentSelector: cleanParentSelector,
+            pseudoElement: pseudoElement,
+            properties: propertiesWithValues
+          });
+          continue;
+        }
+
+        // 擬似クラス（:hover, :focus等）を除去
+        const cleanSelector = selector.replace(/:[\w-]+(\([^)]*\))?/g, '');
+
+        // 汎用セレクタをスキップ（リセットCSSなどからの混入を防ぐ）
+        const trimmedSelector = cleanSelector.trim();
+        if (!trimmedSelector) continue;
+        if (trimmedSelector === '*') continue;
+        if (trimmedSelector.startsWith('@')) continue;
+        if (/^\[[\w-]+(=[^\]]+)?\]$/.test(trimmedSelector)) continue;
+        if (/^[\w-]+$/.test(trimmedSelector)) continue;
+
+        // クラスまたはIDを含むセレクタのみを対象
+        if (!trimmedSelector.includes('.') && !trimmedSelector.includes('#')) {
+          continue;
+        }
+
+        // ルールを保存
+        rules.push({
+          fullSelector: cleanSelector,
+          properties: new Set(properties)
+        });
+      }
+    }
+
+    return { result, rules, pseudoRules };
+  }
+
+  /**
+   * ページ内の全スタイルシートからSource Map URLを抽出し、セレクタマップも構築
+   */
+  async function findSourceMapUrls() {
+    const sourceMapUrls = [];
+    selectorPropertiesMap = {}; // リセット
+    fullSelectorRules = []; // リセット
+    pseudoElementRules = []; // リセット
+
+    // 1. <link rel="stylesheet">からCSSファイルURLを取得
+    const linkElements = document.querySelectorAll('link[rel="stylesheet"]');
+    for (const link of linkElements) {
+      const href = link.href;
+      if (!href) continue;
+
+      try {
+        // Background経由でCSSファイルを取得（CORS回避）
+        const cssText = await fetchViaBackground(href);
+
+        // sourceMappingURL コメントを検索
+        const match = cssText.match(/\/\*#\s*sourceMappingURL=(.+?)\s*\*\//);
+        if (match) {
+          // Source Mapがあるファイルのみルールを追加
+          const { rules, pseudoRules } = parseCSSForSelectors(cssText);
+          fullSelectorRules.push(...rules);
+          pseudoElementRules.push(...pseudoRules);
+
+          let mapUrl = match[1].trim();
+          // 相対パスの場合は絶対パスに変換
+          if (!mapUrl.startsWith('http') && !mapUrl.startsWith('data:')) {
+            const baseUrl = href.substring(0, href.lastIndexOf('/') + 1);
+            mapUrl = baseUrl + mapUrl;
+          }
+          sourceMapUrls.push({
+            cssUrl: href,
+            mapUrl: mapUrl
+          });
+        }
+      } catch (error) {
+        // CSS取得エラーは無視
+      }
+    }
+
+    // 2. <style>タグ内のインラインCSSからも検索
+    const styleElements = document.querySelectorAll('style');
+    for (const style of styleElements) {
+      const cssText = style.textContent;
+
+      const match = cssText.match(/\/\*#\s*sourceMappingURL=(.+?)\s*\*\//);
+      if (match) {
+        // Source Mapがあるファイルのみルールを追加
+        const { rules, pseudoRules } = parseCSSForSelectors(cssText);
+        fullSelectorRules.push(...rules);
+        pseudoElementRules.push(...pseudoRules);
+
+        sourceMapUrls.push({
+          cssUrl: 'inline',
+          mapUrl: match[1].trim()
+        });
+      }
+    }
+
+    return sourceMapUrls;
+  }
+
+  /**
+   * SCSSコンテンツからCSSプロパティを抽出
+   */
+  function extractPropertiesFromSCSS(content, allProperties) {
+    // コメントを除去（/* */ と //）
+    let cleanContent = content
+      .replace(/\/\*[\s\S]*?\*\//g, '')  // ブロックコメント除去
+      .replace(/\/\/[^\n]*/g, '');       // 行コメント除去
+
+    // @mixin, @function, @if などのブロックを除去（プロパティ定義ではないため）
+    // ただし @include は残す
+    cleanContent = cleanContent
+      .replace(/@mixin\s+[\w-]+\s*\([^)]*\)\s*\{[^}]*\}/g, '')
+      .replace(/@function\s+[\w-]+\s*\([^)]*\)\s*\{[^}]*\}/g, '');
+
+    // 変数宣言行を除去（$variable: value;）
+    cleanContent = cleanContent.replace(/^\s*\$[\w-]+\s*:[^;]+;/gm, '');
+
+    // マップ構文内のキーを誤検出しないよう、マップを除去
+    // 例: $map: (key: value, key2: value2);
+    cleanContent = cleanContent.replace(/\$[\w-]+\s*:\s*\([^)]+\)\s*;/g, '');
+
+    // CSSプロパティ名を抽出（property: value パターン）
+    // より厳密に：行頭の空白後にプロパティ名、その後にコロンと値
+    const propertyMatches = cleanContent.matchAll(/^\s{2,}([\w-]+)\s*:\s*[^;{]+[;{]?/gm);
+    for (const match of propertyMatches) {
+      const prop = match[1].toLowerCase();
+
+      // 変数やミックスイン、SCSS特有のものを除外
+      if (prop.startsWith('$') || prop.startsWith('@') || prop.startsWith('--')) {
+        continue;
+      }
+
+      // SCSSの制御構文を除外
+      if (['if', 'else', 'for', 'each', 'while', 'include', 'extend', 'import', 'use', 'forward', 'mixin', 'function', 'return', 'warn', 'error', 'debug'].includes(prop)) {
+        continue;
+      }
+
+      // 主要CSSプロパティリストにあるもののみを対象にする（より厳密なフィルタリング）
+      if (IMPORTANT_CSS_PROPERTIES.includes(prop)) {
+        allProperties.add(prop);
+      }
+    }
+  }
+
+  /**
+   * Source Mapを解析してプロパティ名を抽出
+   */
+  async function parseSourceMaps() {
+    const sourceMapUrls = await findSourceMapUrls();
+    const allProperties = new Set();
+    sourceMapPropertiesByCss = {}; // リセット
+
+    for (const { cssUrl, mapUrl } of sourceMapUrls) {
+      const cssProperties = new Set(); // このCSSファイル固有のプロパティ
+
+      try {
+        // Background経由でSource Mapを取得（CORS回避）
+        const mapText = await fetchViaBackground(mapUrl);
+        const sourceMap = JSON.parse(mapText);
+
+        // CSSファイル名を取得
+        const cssFileName = cssUrl.substring(cssUrl.lastIndexOf('/') + 1).replace(/\?.*$/, '');
+        const mainScssName = cssFileName.replace('.css', '.scss');
+
+        // sourcesContent から実際のSCSS/SASSソースを取得
+        if (sourceMap.sourcesContent && sourceMap.sourcesContent.length > 0) {
+          // sourcesContentがある場合もメインSCSSのみを対象にする
+          for (let i = 0; i < sourceMap.sources.length; i++) {
+            const sourcePath = sourceMap.sources[i];
+            const fileName = sourcePath.substring(sourcePath.lastIndexOf('/') + 1);
+
+            // パーシャルファイルはスキップ
+            if (fileName.startsWith('_')) {
+              continue;
+            }
+
+            // メインSCSSファイルのみを対象
+            if (fileName !== mainScssName) {
+              continue;
+            }
+
+            const content = sourceMap.sourcesContent[i];
+            if (!content) continue;
+
+            extractPropertiesFromSCSS(content, cssProperties);
+          }
+        } else if (sourceMap.sources && sourceMap.sources.length > 0) {
+          // sourcesContentがない場合、sourcesのファイルを直接取得
+          // メインSCSSファイルのみを対象（_で始まる部分ファイルは除外）
+          const mapBaseUrl = mapUrl.substring(0, mapUrl.lastIndexOf('/') + 1);
+
+          for (const sourcePath of sourceMap.sources) {
+            // ファイル名を取得
+            const fileName = sourcePath.substring(sourcePath.lastIndexOf('/') + 1);
+
+            // CSS自体やnode_modulesはスキップ
+            if (sourcePath.endsWith('.css') || sourcePath.includes('node_modules')) {
+              continue;
+            }
+
+            // _で始まる部分ファイル（パーシャル）はスキップ
+            if (fileName.startsWith('_')) {
+              continue;
+            }
+
+            // メインSCSSファイルのみを対象
+            if (fileName !== mainScssName) {
+              continue;
+            }
+
+            try {
+              // 相対パスを絶対パスに変換
+              let sourceUrl = sourcePath;
+              if (!sourcePath.startsWith('http')) {
+                sourceUrl = mapBaseUrl + sourcePath;
+              }
+
+              const scssContent = await fetchViaBackground(sourceUrl);
+              extractPropertiesFromSCSS(scssContent, cssProperties);
+            } catch (e) {
+              // SCSSファイル取得エラーは無視
+            }
+          }
+        }
+
+        // このCSSファイルのプロパティを保存
+        sourceMapPropertiesByCss[cssFileName] = cssProperties;
+
+        // 全体にもマージ（互換性のため）
+        for (const prop of cssProperties) {
+          allProperties.add(prop);
+        }
+      } catch (error) {
+        // Source Map解析エラーは無視
+      }
+    }
+
+    return allProperties;
+  }
+
+  // 色関連のプロパティ（rgb→hex変換対象）
+  const COLOR_PROPERTIES = [
+    'color', 'background', 'background-color',
+    'border', 'border-color',
+    'border-top', 'border-right', 'border-bottom', 'border-left',
+    'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+    'outline', 'outline-color',
+    'text-decoration-color', 'box-shadow'
+  ];
+
+  /**
+   * RGB/RGBA形式をHEX形式に変換
+   * rgb(255, 255, 255) → #ffffff
+   * rgba(255, 255, 255, 1) → #ffffff
+   * rgba(255, 255, 255, 0.5) → rgba(255, 255, 255, 0.5) (透明度がある場合はそのまま)
+   */
+  function rgbToHex(value) {
+    if (!value) return value;
+
+    // rgba形式をチェック
+    const rgbaMatch = value.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*([\d.]+))?\s*\)/);
+    if (!rgbaMatch) return value;
+
+    const r = parseInt(rgbaMatch[1], 10);
+    const g = parseInt(rgbaMatch[2], 10);
+    const b = parseInt(rgbaMatch[3], 10);
+    const a = rgbaMatch[4] !== undefined ? parseFloat(rgbaMatch[4]) : 1;
+
+    // 透明度が1未満の場合はrgbaのまま返す
+    if (a < 1) {
+      return value;
+    }
+
+    // HEX形式に変換
+    const toHex = (n) => n.toString(16).padStart(2, '0');
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+  }
+
+  /**
+   * 値内の全ての色をHEX形式に変換（box-shadow等の複合値対応）
+   */
+  function convertColorsToHex(value) {
+    if (!value) return value;
+
+    // rgb/rgba形式を全て変換
+    return value.replace(/rgba?\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*(?:,\s*[\d.]+)?\s*\)/g, (match) => {
+      return rgbToHex(match);
+    });
+  }
+
+  // ブラウザのデフォルト値（より広範囲にフィルタリング）
+  const BROWSER_DEFAULT_VALUES = {
+    'top': ['auto', '0px'],
+    'right': ['auto', '0px'],
+    'bottom': ['auto', '0px'],
+    'left': ['auto', '0px'],
+    'width': ['auto'],
+    'height': ['auto'],
+    'min-width': ['0px'],
+    'min-height': ['0px'],
+    'max-width': ['none'],
+    'max-height': ['none'],
+    'margin': ['0px'],
+    'margin-top': ['0px'],
+    'margin-right': ['0px'],
+    'margin-bottom': ['0px'],
+    'margin-left': ['0px'],
+    'padding': ['0px'],
+    'padding-top': ['0px'],
+    'padding-right': ['0px'],
+    'padding-bottom': ['0px'],
+    'padding-left': ['0px'],
+    'z-index': ['auto'],
+    'opacity': ['1'],
+    'transform': ['none'],
+    'transition': ['none', 'all 0s ease 0s'],
+    'box-shadow': ['none'],
+    'border-radius': ['0px'],
+  };
+
+  /**
+   * 要素がシンプルセレクタにマッチするかチェック
+   * シンプルセレクタ: タグ名、#id、.class、またはそれらの組み合わせ
+   */
+  function elementMatchesSimpleSelector(element, simpleSelector) {
+    if (!simpleSelector || !element || element.nodeType !== 1) return false;
+
+    // セレクタをパース
+    const tagMatch = simpleSelector.match(/^[\w-]+/);
+    const idMatch = simpleSelector.match(/#([\w-]+)/);
+    const classMatches = simpleSelector.match(/\.([\w-]+)/g);
+
+    // タグ名チェック
+    if (tagMatch) {
+      const tagName = tagMatch[0].toLowerCase();
+      if (element.tagName.toLowerCase() !== tagName) return false;
+    }
+
+    // IDチェック
+    if (idMatch) {
+      if (element.id !== idMatch[1]) return false;
+    }
+
+    // クラスチェック
+    if (classMatches) {
+      for (const cls of classMatches) {
+        const className = cls.substring(1); // . を除去
+        if (!element.classList.contains(className)) return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * 要素がCSSセレクタにマッチするかチェック（祖先チェーンを考慮）
+   */
+  function elementMatchesCssSelector(element, cssSelector) {
+    // セレクタを分割（子孫コンビネータ、子コンビネータなど）
+    // 簡易版：空白と>で分割
+    const parts = cssSelector.split(/\s*>\s*|\s+/).filter(Boolean);
+    if (parts.length === 0) return false;
+
+    // 最後のパートが要素自身にマッチするかチェック
+    const lastPart = parts[parts.length - 1];
+    if (!elementMatchesSimpleSelector(element, lastPart)) return false;
+
+    // パートが1つだけなら、マッチ成功
+    if (parts.length === 1) return true;
+
+    // 祖先チェーンをたどって残りのパートをマッチ
+    let currentElement = element.parentElement;
+    let partIndex = parts.length - 2;
+
+    while (currentElement && partIndex >= 0) {
+      if (elementMatchesSimpleSelector(currentElement, parts[partIndex])) {
+        partIndex--;
+      }
+      currentElement = currentElement.parentElement;
+    }
+
+    // すべてのパートがマッチしたか
+    return partIndex < 0;
+  }
+
+  /**
+   * 要素に適用されるCSSプロパティを取得（完全なセレクタマッチング）
+   */
+  function getPropertiesForElement(element) {
+    const properties = new Set();
+
+    for (const rule of fullSelectorRules) {
+      if (elementMatchesCssSelector(element, rule.fullSelector)) {
+        for (const prop of rule.properties) {
+          properties.add(prop);
+        }
+      }
+    }
+
+    return properties;
+  }
+
+  /**
+   * 要素に適用される擬似要素のスタイルを取得
+   */
+  function getPseudoElementsForElement(element) {
+    const pseudoElements = {};
+
+    for (const rule of pseudoElementRules) {
+      if (elementMatchesCssSelector(element, rule.parentSelector)) {
+        const pseudo = rule.pseudoElement; // ::before or ::after
+        if (!pseudoElements[pseudo]) {
+          pseudoElements[pseudo] = {};
+        }
+        // プロパティをマージ
+        for (const [prop, value] of Object.entries(rule.properties)) {
+          pseudoElements[pseudo][prop] = value;
+        }
+      }
+    }
+
+    return pseudoElements;
+  }
+
+  /**
+   * Source Mapから取得したプロパティでフィルタリングしてスタイルを取得
+   * セレクタベースのフィルタリングを使用
+   */
+  function getElementStylesWithSourceMap(element, sourceMapProps) {
+    const computed = window.getComputedStyle(element);
+    const styles = {};
+
+    // 要素に実際に適用されているセレクタのプロパティのみを対象にする
+    const elementProps = getPropertiesForElement(element);
+
+    // セレクタマップがある場合はそれを使用、ない場合はSource Map全体を使用
+    const propsToCheck = elementProps.size > 0 ? elementProps : sourceMapProps;
+
+    for (const prop of propsToCheck) {
+      const value = computed.getPropertyValue(prop);
+      if (!value) continue;
+
+      // デフォルト値と同じ場合はスキップ
+      const defaultValue = DEFAULT_VALUES[prop];
+      if (defaultValue && value === defaultValue) continue;
+
+      // ブラウザのデフォルト値もスキップ
+      const browserDefaults = BROWSER_DEFAULT_VALUES[prop];
+      if (browserDefaults && browserDefaults.includes(value)) continue;
+
+      // 空やnone系の値をスキップ
+      if (value === '' || value === 'none' || value === 'normal' || value === 'auto') {
+        if (prop !== 'display') continue;
+      }
+
+      // 色プロパティはHEX形式に変換
+      if (COLOR_PROPERTIES.includes(prop)) {
+        styles[prop] = convertColorsToHex(value);
+      } else {
+        styles[prop] = value;
+      }
+    }
+
+    return styles;
+  }
+
+  /**
    * 要素のCSSスタイルを取得
    */
   function getElementStyles(element) {
@@ -126,7 +687,12 @@
         if (prop !== 'display') return;
       }
 
-      styles[prop] = value;
+      // 色プロパティはHEX形式に変換
+      if (COLOR_PROPERTIES.includes(prop)) {
+        styles[prop] = convertColorsToHex(value);
+      } else {
+        styles[prop] = value;
+      }
     });
 
     return styles;
@@ -147,6 +713,10 @@
     const classes = Array.from(element.classList)
       .filter(c => !c.startsWith('element-inspector-'));
     if (classes.length > 0) {
+      // div以外のタグはタグ名も含める（例: h2.js-ani-block）
+      if (tagName !== 'div') {
+        return `${tagName}.${classes[0]}`;
+      }
       return `.${classes[0]}`;
     }
 
@@ -172,18 +742,23 @@
   /**
    * スタイルツリーを構築（再帰走査）
    */
-  function buildStyleTree(element, depth = 0) {
+  function buildStyleTree(element, depth = 0, useSourceMap = false) {
     if (depth > MAX_DEPTH) return null;
 
     const selector = generateSelector(element);
-    const styles = getElementStyles(element);
+    const styles = useSourceMap && sourceMapProperties
+      ? getElementStylesWithSourceMap(element, sourceMapProperties)
+      : getElementStyles(element);
     const tagName = element.tagName.toLowerCase();
     const id = element.id || null;
     const classes = Array.from(element.classList)
       .filter(c => !c.startsWith('element-inspector-'));
 
+    // 擬似要素のスタイルを取得
+    const pseudoElements = useSourceMap ? getPseudoElementsForElement(element) : {};
+
     const children = Array.from(element.children)
-      .map(child => buildStyleTree(child, depth + 1))
+      .map(child => buildStyleTree(child, depth + 1, useSourceMap))
       .filter(Boolean);
 
     return {
@@ -192,6 +767,7 @@
       id,
       classes,
       styles,
+      pseudoElements,
       children,
       depth
     };
@@ -200,13 +776,21 @@
   /**
    * 要素情報とスタイルツリーを取得
    */
-  function getElementInfoWithTree(element) {
+  function getElementInfoWithTree(element, useSourceMap = false) {
     const basicInfo = getElementInfo(element);
-    const styleTree = buildStyleTree(element);
+
+    // Source Map使用時はスタイルも再取得
+    if (useSourceMap && sourceMapProperties) {
+      basicInfo.styles = getElementStylesWithSourceMap(element, sourceMapProperties);
+    }
+
+    const styleTree = buildStyleTree(element, 0, useSourceMap);
 
     return {
       ...basicInfo,
-      styleTree
+      styleTree,
+      hasSourceMap: sourceMapProperties !== null && sourceMapProperties.size > 0,
+      sourceMapPropertyCount: sourceMapProperties ? sourceMapProperties.size : 0
     };
   }
 
@@ -249,7 +833,9 @@
     event.stopPropagation();
 
     const element = event.target;
-    lastElementInfo = getElementInfoWithTree(element);
+    // Source Mapがあれば使用
+    const useSourceMap = sourceMapProperties !== null && sourceMapProperties.size > 0;
+    lastElementInfo = getElementInfoWithTree(element, useSourceMap);
 
     // 検査モードを終了
     stopInspectMode();
@@ -316,7 +902,50 @@
       case 'getStatus':
         sendResponse({
           isInspecting,
-          lastElementInfo
+          lastElementInfo,
+          hasSourceMap: sourceMapProperties !== null && sourceMapProperties.size > 0,
+          sourceMapPropertyCount: sourceMapProperties ? sourceMapProperties.size : 0
+        });
+        break;
+
+      case 'loadSourceMaps':
+        // Source Mapを読み込み
+        parseSourceMaps().then(props => {
+          sourceMapProperties = props;
+          sendResponse({
+            status: 'ok',
+            propertyCount: props.size,
+            properties: Array.from(props)
+          });
+        }).catch(error => {
+          console.error('Element Inspector: Source Map読み込みエラー', error);
+          sendResponse({
+            status: 'error',
+            error: error.message
+          });
+        });
+        return true; // 非同期レスポンス
+
+      case 'clearSourceMaps':
+        sourceMapProperties = null;
+        sourceMapCache = null;
+        sendResponse({ status: 'ok' });
+        break;
+
+      case 'getSourceMapStatus':
+        // CSSファイルごとのプロパティ情報を構築
+        const cssFileInfo = {};
+        for (const [cssFile, props] of Object.entries(sourceMapPropertiesByCss)) {
+          cssFileInfo[cssFile] = {
+            count: props.size,
+            properties: Array.from(props)
+          };
+        }
+        sendResponse({
+          hasSourceMap: sourceMapProperties !== null && sourceMapProperties.size > 0,
+          propertyCount: sourceMapProperties ? sourceMapProperties.size : 0,
+          properties: sourceMapProperties ? Array.from(sourceMapProperties) : [],
+          byCssFile: cssFileInfo
         });
         break;
 
@@ -324,5 +953,12 @@
         sendResponse({ status: 'unknown action' });
     }
     return true;
+  });
+
+  // 起動時にSource Mapを自動読み込み
+  parseSourceMaps().then(props => {
+    sourceMapProperties = props;
+  }).catch(() => {
+    // Source Map自動読み込みスキップ
   });
 })();

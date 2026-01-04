@@ -16,11 +16,16 @@ const treeStatsEl = document.getElementById('treeStats');
 const copySASSBtn = document.getElementById('copySASS');
 const historyEl = document.getElementById('history');
 const historyListEl = document.getElementById('historyList');
+const sourceMapStatusEl = document.getElementById('sourceMapStatus');
+const sourceMapInfoEl = document.getElementById('sourceMapInfo');
+const reloadSourceMapBtn = document.getElementById('reloadSourceMap');
 
 let isInspecting = false;
 let history = [];
 let currentStyles = {};
 let currentStyleTree = null;
+let hasSourceMap = false;
+let sourceMapPropertyCount = 0;
 const MAX_HISTORY = 10;
 
 /**
@@ -59,6 +64,81 @@ function updateUI() {
     statusEl.textContent = '';
     statusEl.classList.remove('inspecting');
   }
+}
+
+let sourceMapByCss = {}; // CSSファイルごとのプロパティ情報
+
+/**
+ * Source Mapステータスを更新
+ */
+function updateSourceMapStatus(loading = false) {
+  sourceMapStatusEl.classList.remove('hidden');
+
+  if (loading) {
+    sourceMapInfoEl.textContent = 'Source Map: 読み込み中...';
+    sourceMapStatusEl.classList.remove('active');
+    sourceMapStatusEl.classList.add('loading');
+  } else if (hasSourceMap && sourceMapPropertyCount > 0) {
+    // CSSファイルごとの詳細を表示
+    const cssFiles = Object.keys(sourceMapByCss);
+    if (cssFiles.length > 0) {
+      const details = cssFiles.map(f => `${f}:${sourceMapByCss[f].count}`).join(', ');
+      sourceMapInfoEl.textContent = `Source Map: ${details} (計${sourceMapPropertyCount}個)`;
+    } else {
+      sourceMapInfoEl.textContent = `Source Map: ${sourceMapPropertyCount}個のプロパティを検出`;
+    }
+    sourceMapStatusEl.classList.remove('loading');
+    sourceMapStatusEl.classList.add('active');
+  } else {
+    sourceMapInfoEl.textContent = 'Source Map: 未検出';
+    sourceMapStatusEl.classList.remove('loading');
+    sourceMapStatusEl.classList.remove('active');
+  }
+}
+
+/**
+ * Source Mapステータスを取得
+ */
+async function checkSourceMapStatus() {
+  const response = await sendMessageToContent('getSourceMapStatus');
+  if (response) {
+    hasSourceMap = response.hasSourceMap;
+    sourceMapPropertyCount = response.propertyCount;
+    sourceMapByCss = response.byCssFile || {};
+    updateSourceMapStatus();
+  }
+}
+
+/**
+ * Source Mapを再読み込み
+ */
+async function reloadSourceMaps() {
+  updateSourceMapStatus(true); // ローディング表示
+
+  const tabId = getInspectedTabId();
+  try {
+    const response = await chrome.tabs.sendMessage(tabId, { action: 'loadSourceMaps' });
+    if (response) {
+      if (response.status === 'ok') {
+        hasSourceMap = response.propertyCount > 0;
+        sourceMapPropertyCount = response.propertyCount;
+        console.log('Source Map再読み込み完了:', response.propertyCount, '個のプロパティ');
+        // 詳細情報を取得
+        await checkSourceMapStatus();
+      } else {
+        console.warn('Source Map読み込みエラー:', response.error);
+        hasSourceMap = false;
+        sourceMapPropertyCount = 0;
+        sourceMapByCss = {};
+      }
+    }
+  } catch (error) {
+    console.error('Source Map再読み込みエラー:', error);
+    hasSourceMap = false;
+    sourceMapPropertyCount = 0;
+    sourceMapByCss = {};
+  }
+  updateSourceMapStatus();
 }
 
 /**
@@ -188,6 +268,13 @@ function displayElementInfo(info) {
   childCountEl.textContent = info.childCount;
 
   elementInfoEl.classList.remove('hidden');
+
+  // Source Mapステータスを更新
+  if (info.hasSourceMap !== undefined) {
+    hasSourceMap = info.hasSourceMap;
+    sourceMapPropertyCount = info.sourceMapPropertyCount || 0;
+    updateSourceMapStatus();
+  }
 
   // CSSプロパティを表示
   displayCSSProperties(info.styles);
@@ -362,9 +449,26 @@ function treeToSASS(node, indent = 0) {
     });
   }
 
+  // 擬似要素を出力（::before, ::after）
+  if (node.pseudoElements && Object.keys(node.pseudoElements).length > 0) {
+    Object.entries(node.pseudoElements).forEach(([pseudo, styles]) => {
+      if (Object.keys(styles).length > 0) {
+        output += '\n';
+        // & を使って擬似要素を表現
+        output += `${spaces}  &${pseudo} {\n`;
+        Object.entries(styles).forEach(([prop, value]) => {
+          output += `${spaces}    ${formatCSSProperty(prop, value)}\n`;
+        });
+        output += `${spaces}  }\n`;
+      }
+    });
+  }
+
   // 子要素を再帰処理
   if (node.children && node.children.length > 0) {
-    if (Object.keys(node.styles || {}).length > 0) {
+    const hasStyles = Object.keys(node.styles || {}).length > 0;
+    const hasPseudo = node.pseudoElements && Object.keys(node.pseudoElements).length > 0;
+    if (hasStyles || hasPseudo) {
       output += '\n';
     }
     node.children.forEach(child => {
@@ -504,17 +608,26 @@ async function init() {
   const response = await sendMessageToContent('getStatus');
   if (response) {
     isInspecting = response.isInspecting;
+    hasSourceMap = response.hasSourceMap || false;
+    sourceMapPropertyCount = response.sourceMapPropertyCount || 0;
     updateUI();
+    updateSourceMapStatus();
     if (response.lastElementInfo) {
       displayElementInfo(response.lastElementInfo);
     }
   }
+
+  // Source Mapステータスを少し遅れて再チェック（非同期読み込み完了後）
+  setTimeout(() => {
+    checkSourceMapStatus();
+  }, 1000);
 }
 
 // イベントリスナー
 toggleBtn.addEventListener('click', toggleInspectMode);
 copyCSSBtn.addEventListener('click', copyCSS);
 copySASSBtn.addEventListener('click', copySASS);
+reloadSourceMapBtn.addEventListener('click', reloadSourceMaps);
 
 // 初期化実行
 init();
