@@ -386,6 +386,14 @@ h2 {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: background-color 0.15s;
+}
+
+.tree-selector:hover {
+  background-color: rgba(26, 115, 232, 0.15);
 }
 
 .tree-tag {
@@ -499,6 +507,10 @@ h2 {
 
   .tree-toggle:hover {
     color: #8ab4f8;
+  }
+
+  .tree-selector:hover {
+    background-color: rgba(138, 180, 248, 0.2);
   }
 
   .tree-tag {

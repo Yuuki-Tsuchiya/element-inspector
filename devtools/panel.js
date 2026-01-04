@@ -39,14 +39,25 @@ function getInspectedTabId() {
 /**
  * Content Scriptにメッセージを送信
  */
-async function sendMessageToContent(action) {
+async function sendMessageToContent(action, data = {}) {
   const tabId = getInspectedTabId();
   try {
-    const response = await chrome.tabs.sendMessage(tabId, { action });
+    const response = await chrome.tabs.sendMessage(tabId, { action, ...data });
     return response;
   } catch (error) {
     console.error('メッセージ送信エラー:', error);
     return null;
+  }
+}
+
+/**
+ * XPathで要素を選択
+ */
+async function selectElementByXPath(xpath) {
+  const response = await sendMessageToContent('selectByXPath', { xpath });
+  if (response && response.status === 'ok' && response.data) {
+    displayElementInfo(response.data);
+    addToHistory(response.data);
   }
 }
 
@@ -373,6 +384,16 @@ function createTreeNode(node) {
     classSpan.textContent = `.${node.classes.join('.')}`;
     selectorEl.appendChild(classSpan);
   }
+
+  // クリックで要素を選択
+  selectorEl.style.cursor = 'pointer';
+  selectorEl.title = 'クリックでこの要素を選択';
+  selectorEl.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (node.xpath) {
+      await selectElementByXPath(node.xpath);
+    }
+  });
 
   headerEl.appendChild(selectorEl);
 

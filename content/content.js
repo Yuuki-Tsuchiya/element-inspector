@@ -758,6 +758,56 @@
   // ============================================================
 
   /**
+   * 要素のXPathを生成
+   */
+  function getElementXPath(element) {
+    if (!element) return '';
+    if (element.id) {
+      return `//*[@id="${element.id}"]`;
+    }
+
+    const parts = [];
+    let current = element;
+
+    while (current && current.nodeType === Node.ELEMENT_NODE) {
+      let index = 1;
+      let sibling = current.previousSibling;
+
+      while (sibling) {
+        if (sibling.nodeType === Node.ELEMENT_NODE &&
+            sibling.tagName === current.tagName) {
+          index++;
+        }
+        sibling = sibling.previousSibling;
+      }
+
+      const tagName = current.tagName.toLowerCase();
+      parts.unshift(`${tagName}[${index}]`);
+      current = current.parentNode;
+    }
+
+    return '/' + parts.join('/');
+  }
+
+  /**
+   * XPathから要素を取得
+   */
+  function getElementByXPath(xpath) {
+    try {
+      const result = document.evaluate(
+        xpath,
+        document,
+        null,
+        XPathResult.FIRST_ORDERED_NODE_TYPE,
+        null
+      );
+      return result.singleNodeValue;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /**
    * 要素のセレクタを生成
    */
   function generateSelector(element) {
@@ -805,6 +855,7 @@
     if (depth > MAX_DEPTH) return null;
 
     const selector = generateSelector(element);
+    const xpath = getElementXPath(element);
     const styles = useSourceMap && sourceMapProperties
       ? getElementStylesWithSourceMap(element)
       : getElementStyles(element);
@@ -822,6 +873,7 @@
 
     return {
       selector,
+      xpath,
       tagName,
       id,
       classes,
@@ -973,6 +1025,17 @@
           hasSourceMap: sourceMapProperties !== null && sourceMapProperties.size > 0,
           sourceMapPropertyCount: sourceMapProperties ? sourceMapProperties.size : 0
         });
+        break;
+
+      case 'selectByXPath':
+        const element = getElementByXPath(message.xpath);
+        if (element) {
+          const useSourceMap = sourceMapProperties !== null && sourceMapProperties.size > 0;
+          lastElementInfo = getElementInfoWithTree(element, useSourceMap);
+          sendResponse({ status: 'ok', data: lastElementInfo });
+        } else {
+          sendResponse({ status: 'error', error: 'Element not found' });
+        }
         break;
 
       case 'loadSourceMaps':
