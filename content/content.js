@@ -1,5 +1,12 @@
 'use strict';
 
+/**
+ * Element Inspector - Content Script
+ *
+ * Webページ上の要素を検査し、CSSプロパティをSASS形式で抽出する
+ * Source Map連携により、実際にSCSSで定義されたプロパティのみを取得可能
+ */
+
 (() => {
   // 重複読み込み防止
   if (window.elementInspectorLoaded) {
@@ -7,19 +14,27 @@
   }
   window.elementInspectorLoaded = true;
 
+  // ============================================================
   // 状態管理
+  // ============================================================
+
   let isInspecting = false;
   let currentHighlightedElement = null;
   let lastElementInfo = null;
 
-  // 設定
-  const MAX_DEPTH = 5; // 最大走査深度
+  // Source Map関連
+  let sourceMapProperties = null;
+  let sourceMapPropertiesByCss = {};
 
-  // Source Map キャッシュ
-  let sourceMapCache = null;
-  let sourceMapProperties = null; // Source Mapから抽出したプロパティセット
-  let sourceMapPropertiesByCss = {}; // CSSファイルごとのプロパティセット
-  let selectorPropertiesMap = {}; // セレクタごとのプロパティマップ
+  // CSSルールキャッシュ
+  let fullSelectorRules = [];
+  let pseudoElementRules = [];
+
+  // ============================================================
+  // 定数定義
+  // ============================================================
+
+  const MAX_DEPTH = 5; // 最大走査深度
 
   // 主要CSSプロパティリスト
   const IMPORTANT_CSS_PROPERTIES = [
@@ -47,69 +62,90 @@
     'opacity', 'visibility', 'overflow', 'cursor', 'box-shadow', 'transform', 'transition'
   ];
 
-  // デフォルト値（フィルタリング用）
+  // デフォルト値（フィルタリング用）- 配列形式で複数のデフォルト値を許容
   const DEFAULT_VALUES = {
-    'display': 'block',
-    'position': 'static',
-    'top': 'auto',
-    'right': 'auto',
-    'bottom': 'auto',
-    'left': 'auto',
-    'z-index': 'auto',
-    'float': 'none',
-    'clear': 'none',
-    'width': 'auto',
-    'height': 'auto',
-    'min-width': '0px',
-    'max-width': 'none',
-    'min-height': '0px',
-    'max-height': 'none',
-    'margin': '0px',
-    'margin-top': '0px',
-    'margin-right': '0px',
-    'margin-bottom': '0px',
-    'margin-left': '0px',
-    'padding': '0px',
-    'padding-top': '0px',
-    'padding-right': '0px',
-    'padding-bottom': '0px',
-    'padding-left': '0px',
-    'box-sizing': 'content-box',
-    'flex': '0 1 auto',
-    'flex-direction': 'row',
-    'flex-wrap': 'nowrap',
-    'justify-content': 'normal',
-    'align-items': 'normal',
-    'align-content': 'normal',
-    'flex-grow': '0',
-    'flex-shrink': '1',
-    'flex-basis': 'auto',
-    'align-self': 'auto',
-    'gap': 'normal',
-    'color': 'rgb(0, 0, 0)',
-    'font-style': 'normal',
-    'text-align': 'start',
-    'text-decoration': 'none',
-    'text-transform': 'none',
-    'letter-spacing': 'normal',
-    'background': 'none',
-    'background-color': 'rgba(0, 0, 0, 0)',
-    'background-image': 'none',
-    'background-size': 'auto',
-    'background-position': '0% 0%',
-    'border': 'none',
-    'border-width': '0px',
-    'border-style': 'none',
-    'border-color': 'rgb(0, 0, 0)',
-    'border-radius': '0px',
-    'opacity': '1',
-    'visibility': 'visible',
-    'overflow': 'visible',
-    'cursor': 'auto',
-    'box-shadow': 'none',
-    'transform': 'none',
-    'transition': 'none'
+    // レイアウト
+    'display': ['block', 'inline'],
+    'position': ['static'],
+    'top': ['auto', '0px'],
+    'right': ['auto', '0px'],
+    'bottom': ['auto', '0px'],
+    'left': ['auto', '0px'],
+    'z-index': ['auto'],
+    'float': ['none'],
+    'clear': ['none'],
+    // ボックスモデル
+    'width': ['auto'],
+    'height': ['auto'],
+    'min-width': ['0px'],
+    'max-width': ['none'],
+    'min-height': ['0px'],
+    'max-height': ['none'],
+    'margin': ['0px'],
+    'margin-top': ['0px'],
+    'margin-right': ['0px'],
+    'margin-bottom': ['0px'],
+    'margin-left': ['0px'],
+    'padding': ['0px'],
+    'padding-top': ['0px'],
+    'padding-right': ['0px'],
+    'padding-bottom': ['0px'],
+    'padding-left': ['0px'],
+    'box-sizing': ['content-box'],
+    // Flexbox
+    'flex': ['0 1 auto'],
+    'flex-direction': ['row'],
+    'flex-wrap': ['nowrap'],
+    'justify-content': ['normal'],
+    'align-items': ['normal'],
+    'align-content': ['normal'],
+    'flex-grow': ['0'],
+    'flex-shrink': ['1'],
+    'flex-basis': ['auto'],
+    'align-self': ['auto'],
+    'gap': ['normal'],
+    // テキスト
+    'color': ['rgb(0, 0, 0)'],
+    'font-style': ['normal'],
+    'text-align': ['start'],
+    'text-decoration': ['none'],
+    'text-transform': ['none'],
+    'letter-spacing': ['normal'],
+    // 背景
+    'background': ['none'],
+    'background-color': ['rgba(0, 0, 0, 0)'],
+    'background-image': ['none'],
+    'background-size': ['auto'],
+    'background-position': ['0% 0%'],
+    // ボーダー
+    'border': ['none'],
+    'border-width': ['0px'],
+    'border-style': ['none'],
+    'border-color': ['rgb(0, 0, 0)'],
+    'border-radius': ['0px'],
+    // その他
+    'opacity': ['1'],
+    'visibility': ['visible'],
+    'overflow': ['visible'],
+    'cursor': ['auto'],
+    'box-shadow': ['none'],
+    'transform': ['none'],
+    'transition': ['none', 'all 0s ease 0s']
   };
+
+  // 色関連のプロパティ（rgb→hex変換対象）
+  const COLOR_PROPERTIES = [
+    'color', 'background', 'background-color',
+    'border', 'border-color',
+    'border-top', 'border-right', 'border-bottom', 'border-left',
+    'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
+    'outline', 'outline-color',
+    'text-decoration-color', 'box-shadow'
+  ];
+
+  // ============================================================
+  // ユーティリティ関数
+  // ============================================================
 
   /**
    * Background Service Worker経由でfetch（CORS回避）
@@ -130,16 +166,14 @@
     });
   }
 
-  // 完全なCSSルールを保存（セレクタ全体 → プロパティ）
-  let fullSelectorRules = [];
-  // 擬似要素ルールを保存（セレクタ → 擬似要素 → プロパティ）
-  let pseudoElementRules = [];
+  // ============================================================
+  // CSS解析（Source Map連携）
+  // ============================================================
 
   /**
    * CSSテキストを解析してセレクタごとのプロパティを抽出
    */
   function parseCSSForSelectors(cssText) {
-    const result = {};
     const rules = [];
     const pseudoRules = [];
 
@@ -231,7 +265,7 @@
       }
     }
 
-    return { result, rules, pseudoRules };
+    return { rules, pseudoRules };
   }
 
   /**
@@ -239,7 +273,6 @@
    */
   async function findSourceMapUrls() {
     const sourceMapUrls = [];
-    selectorPropertiesMap = {}; // リセット
     fullSelectorRules = []; // リセット
     pseudoElementRules = []; // リセット
 
@@ -440,15 +473,9 @@
     return allProperties;
   }
 
-  // 色関連のプロパティ（rgb→hex変換対象）
-  const COLOR_PROPERTIES = [
-    'color', 'background', 'background-color',
-    'border', 'border-color',
-    'border-top', 'border-right', 'border-bottom', 'border-left',
-    'border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color',
-    'outline', 'outline-color',
-    'text-decoration-color', 'box-shadow'
-  ];
+  // ============================================================
+  // 色変換
+  // ============================================================
 
   /**
    * RGB/RGBA形式をHEX形式に変換
@@ -490,35 +517,9 @@
     });
   }
 
-  // ブラウザのデフォルト値（より広範囲にフィルタリング）
-  const BROWSER_DEFAULT_VALUES = {
-    'top': ['auto', '0px'],
-    'right': ['auto', '0px'],
-    'bottom': ['auto', '0px'],
-    'left': ['auto', '0px'],
-    'width': ['auto'],
-    'height': ['auto'],
-    'min-width': ['0px'],
-    'min-height': ['0px'],
-    'max-width': ['none'],
-    'max-height': ['none'],
-    'margin': ['0px'],
-    'margin-top': ['0px'],
-    'margin-right': ['0px'],
-    'margin-bottom': ['0px'],
-    'margin-left': ['0px'],
-    'padding': ['0px'],
-    'padding-top': ['0px'],
-    'padding-right': ['0px'],
-    'padding-bottom': ['0px'],
-    'padding-left': ['0px'],
-    'z-index': ['auto'],
-    'opacity': ['1'],
-    'transform': ['none'],
-    'transition': ['none', 'all 0s ease 0s'],
-    'box-shadow': ['none'],
-    'border-radius': ['0px'],
-  };
+  // ============================================================
+  // セレクタマッチング
+  // ============================================================
 
   /**
    * 要素がシンプルセレクタにマッチするかチェック
@@ -624,79 +625,137 @@
     return pseudoElements;
   }
 
+  // ============================================================
+  // スタイル取得
+  // ============================================================
+
   /**
-   * Source Mapから取得したプロパティでフィルタリングしてスタイルを取得
-   * セレクタベースのフィルタリングを使用
+   * CSS値がデフォルト値かどうかを判定
    */
-  function getElementStylesWithSourceMap(element, sourceMapProps) {
+  function isDefaultValue(prop, value) {
+    // 空値はデフォルトとして扱う
+    if (!value || value === '') return true;
+
+    // 汎用的なデフォルト値（displayのnoneは除外）
+    if (value === 'none' || value === 'normal' || value === 'auto') {
+      if (prop === 'display' && value === 'none') return false;
+      return true;
+    }
+
+    // 定義済みデフォルト値との比較（配列形式）
+    const defaults = DEFAULT_VALUES[prop];
+    if (defaults && defaults.includes(value)) return true;
+
+    return false;
+  }
+
+  /**
+   * px値を単位なしの比率に変換（line-height用）
+   * @param {string} pxValue - px値（例: "24px"）
+   * @param {number} baseFontSize - 基準となるfont-size（px）
+   * @returns {string} 単位なしの数値（例: "1.5"）
+   */
+  function pxToUnitless(pxValue, baseFontSize) {
+    const match = pxValue.match(/^([\d.]+)px$/);
+    if (!match || !baseFontSize) return pxValue;
+
+    const px = parseFloat(match[1]);
+    const ratio = px / baseFontSize;
+
+    // 小数点以下の桁数を調整（不要な0を削除）
+    return ratio.toFixed(4).replace(/\.?0+$/, '');
+  }
+
+  /**
+   * px値をem値に変換
+   * @param {string} pxValue - px値（例: "24px"）
+   * @param {number} baseFontSize - 基準となるfont-size（px）
+   * @returns {string} em値（例: "0.1em"）
+   */
+  function pxToEm(pxValue, baseFontSize) {
+    const match = pxValue.match(/^([\d.]+)px$/);
+    if (!match || !baseFontSize) return pxValue;
+
+    const px = parseFloat(match[1]);
+    const em = px / baseFontSize;
+
+    // 小数点以下の桁数を調整（不要な0を削除）
+    const formatted = em.toFixed(4).replace(/\.?0+$/, '');
+    return `${formatted}em`;
+  }
+
+  /**
+   * CSS値をフォーマット（色変換、単位変換など）
+   * @param {string} prop - プロパティ名
+   * @param {string} value - 値
+   * @param {number} fontSize - font-size（px単位の数値、em変換用）
+   */
+  function formatCSSValue(prop, value, fontSize = null) {
+    // 色変換
+    if (COLOR_PROPERTIES.includes(prop)) {
+      return convertColorsToHex(value);
+    }
+
+    // line-height: pxを単位なしに変換
+    if (prop === 'line-height' && fontSize && value.endsWith('px')) {
+      return pxToUnitless(value, fontSize);
+    }
+
+    // letter-spacing: pxをemに変換
+    if (prop === 'letter-spacing' && fontSize && value.endsWith('px')) {
+      return pxToEm(value, fontSize);
+    }
+
+    return value;
+  }
+
+  /**
+   * 要素のCSSスタイルを取得（共通処理）
+   * @param {Element} element - 対象要素
+   * @param {Set|Array|null} propertiesToCheck - チェックするプロパティ（nullの場合は全プロパティ）
+   */
+  function getElementStyles(element, propertiesToCheck = null) {
     const computed = window.getComputedStyle(element);
     const styles = {};
 
-    // 要素に実際に適用されているセレクタのプロパティのみを対象にする
-    const elementProps = getPropertiesForElement(element);
+    // font-sizeを取得（em変換の基準）
+    const fontSizeValue = computed.getPropertyValue('font-size');
+    const fontSize = parseFloat(fontSizeValue); // px単位の数値
 
-    // セレクタマップがある場合はそれを使用、ない場合はSource Map全体を使用
-    const propsToCheck = elementProps.size > 0 ? elementProps : sourceMapProps;
+    // Source Map使用時はセレクタベースのプロパティを優先
+    let propsToCheck = propertiesToCheck;
+    if (propsToCheck && propsToCheck instanceof Set && propsToCheck.size === 0) {
+      // セレクタマッチがない場合はSource Map全体を使用
+      propsToCheck = sourceMapProperties;
+    }
 
-    for (const prop of propsToCheck) {
+    // チェック対象のプロパティを決定
+    const props = propsToCheck || IMPORTANT_CSS_PROPERTIES;
+
+    for (const prop of props) {
       const value = computed.getPropertyValue(prop);
-      if (!value) continue;
 
-      // デフォルト値と同じ場合はスキップ
-      const defaultValue = DEFAULT_VALUES[prop];
-      if (defaultValue && value === defaultValue) continue;
+      // デフォルト値はスキップ
+      if (isDefaultValue(prop, value)) continue;
 
-      // ブラウザのデフォルト値もスキップ
-      const browserDefaults = BROWSER_DEFAULT_VALUES[prop];
-      if (browserDefaults && browserDefaults.includes(value)) continue;
-
-      // 空やnone系の値をスキップ
-      if (value === '' || value === 'none' || value === 'normal' || value === 'auto') {
-        if (prop !== 'display') continue;
-      }
-
-      // 色プロパティはHEX形式に変換
-      if (COLOR_PROPERTIES.includes(prop)) {
-        styles[prop] = convertColorsToHex(value);
-      } else {
-        styles[prop] = value;
-      }
+      // 値をフォーマットして保存（font-sizeを渡してem変換に使用）
+      styles[prop] = formatCSSValue(prop, value, fontSize);
     }
 
     return styles;
   }
 
   /**
-   * 要素のCSSスタイルを取得
+   * Source Mapベースでスタイルを取得
    */
-  function getElementStyles(element) {
-    const computed = window.getComputedStyle(element);
-    const styles = {};
-
-    IMPORTANT_CSS_PROPERTIES.forEach(prop => {
-      const value = computed.getPropertyValue(prop);
-      if (!value) return;
-
-      // デフォルト値と同じ場合はスキップ
-      const defaultValue = DEFAULT_VALUES[prop];
-      if (defaultValue && value === defaultValue) return;
-
-      // 空やnone系の値をスキップ
-      if (value === '' || value === 'none' || value === 'normal' || value === 'auto') {
-        // ただしdisplayのnoneは有効
-        if (prop !== 'display') return;
-      }
-
-      // 色プロパティはHEX形式に変換
-      if (COLOR_PROPERTIES.includes(prop)) {
-        styles[prop] = convertColorsToHex(value);
-      } else {
-        styles[prop] = value;
-      }
-    });
-
-    return styles;
+  function getElementStylesWithSourceMap(element) {
+    const elementProps = getPropertiesForElement(element);
+    return getElementStyles(element, elementProps);
   }
+
+  // ============================================================
+  // 要素情報・ツリー構築
+  // ============================================================
 
   /**
    * 要素のセレクタを生成
@@ -747,7 +806,7 @@
 
     const selector = generateSelector(element);
     const styles = useSourceMap && sourceMapProperties
-      ? getElementStylesWithSourceMap(element, sourceMapProperties)
+      ? getElementStylesWithSourceMap(element)
       : getElementStyles(element);
     const tagName = element.tagName.toLowerCase();
     const id = element.id || null;
@@ -781,7 +840,7 @@
 
     // Source Map使用時はスタイルも再取得
     if (useSourceMap && sourceMapProperties) {
-      basicInfo.styles = getElementStylesWithSourceMap(element, sourceMapProperties);
+      basicInfo.styles = getElementStylesWithSourceMap(element);
     }
 
     const styleTree = buildStyleTree(element, 0, useSourceMap);
@@ -793,6 +852,10 @@
       sourceMapPropertyCount: sourceMapProperties ? sourceMapProperties.size : 0
     };
   }
+
+  // ============================================================
+  // 検査モード（UI操作）
+  // ============================================================
 
   /**
    * ハイライトを削除
@@ -884,6 +947,10 @@
     document.removeEventListener('keydown', handleKeyDown, true);
   }
 
+  // ============================================================
+  // メッセージ通信
+  // ============================================================
+
   /**
    * メッセージリスナー
    */
@@ -928,7 +995,9 @@
 
       case 'clearSourceMaps':
         sourceMapProperties = null;
-        sourceMapCache = null;
+        sourceMapPropertiesByCss = {};
+        fullSelectorRules = [];
+        pseudoElementRules = [];
         sendResponse({ status: 'ok' });
         break;
 
@@ -954,6 +1023,10 @@
     }
     return true;
   });
+
+  // ============================================================
+  // 初期化
+  // ============================================================
 
   // 起動時にSource Mapを自動読み込み
   parseSourceMaps().then(props => {

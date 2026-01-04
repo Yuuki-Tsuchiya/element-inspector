@@ -7,6 +7,7 @@ const tagNameEl = document.getElementById('tagName');
 const elementIdEl = document.getElementById('elementId');
 const classesEl = document.getElementById('classes');
 const childCountEl = document.getElementById('childCount');
+const mainContentEl = document.getElementById('mainContent');
 const cssPropertiesEl = document.getElementById('cssProperties');
 const cssContentEl = document.getElementById('cssContent');
 const copyCSSBtn = document.getElementById('copyCSS');
@@ -146,13 +147,12 @@ async function reloadSourceMaps() {
  */
 function displayCSSProperties(styles) {
   currentStyles = styles || {};
+  cssContentEl.innerHTML = '';
 
   if (!styles || Object.keys(styles).length === 0) {
-    cssPropertiesEl.classList.add('hidden');
+    cssContentEl.innerHTML = '<div class="css-row" style="color: #999;">スタイルなし</div>';
     return;
   }
-
-  cssContentEl.innerHTML = '';
 
   Object.entries(styles).forEach(([prop, value]) => {
     const row = document.createElement('div');
@@ -188,8 +188,6 @@ function displayCSSProperties(styles) {
     row.appendChild(semicolonSpan);
     cssContentEl.appendChild(row);
   });
-
-  cssPropertiesEl.classList.remove('hidden');
 }
 
 /**
@@ -250,8 +248,7 @@ function copyCSS() {
 function displayElementInfo(info) {
   if (!info) {
     elementInfoEl.classList.add('hidden');
-    cssPropertiesEl.classList.add('hidden');
-    styleTreeEl.classList.add('hidden');
+    mainContentEl.classList.add('hidden');
     return;
   }
 
@@ -283,6 +280,9 @@ function displayElementInfo(info) {
   if (info.styleTree) {
     displayStyleTree(info.styleTree);
   }
+
+  // メインコンテンツを表示
+  mainContentEl.classList.remove('hidden');
 }
 
 /**
@@ -405,9 +405,11 @@ function createTreeNode(node) {
  */
 function displayStyleTree(tree) {
   currentStyleTree = tree;
+  treeContentEl.innerHTML = '';
 
   if (!tree) {
-    styleTreeEl.classList.add('hidden');
+    treeStatsEl.textContent = '';
+    treeContentEl.innerHTML = '<div style="color: #999;">ツリーなし</div>';
     return;
   }
 
@@ -417,10 +419,7 @@ function displayStyleTree(tree) {
   treeStatsEl.textContent = `${nodeCount}要素 / 深度${maxDepth}`;
 
   // ツリーを描画
-  treeContentEl.innerHTML = '';
   treeContentEl.appendChild(createTreeNode(tree));
-
-  styleTreeEl.classList.remove('hidden');
 }
 
 /**
