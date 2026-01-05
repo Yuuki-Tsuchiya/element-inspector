@@ -21,6 +21,12 @@ const sourceMapStatusEl = document.getElementById('sourceMapStatus');
 const sourceMapInfoEl = document.getElementById('sourceMapInfo');
 const reloadSourceMapBtn = document.getElementById('reloadSourceMap');
 
+// 設定UI要素
+const toggleSettingsBtn = document.getElementById('toggleSettings');
+const settingsPanel = document.getElementById('settingsPanel');
+const settingMediaQuery = document.getElementById('settingMediaQuery');
+const settingFszMixin = document.getElementById('settingFszMixin');
+
 let isInspecting = false;
 let history = [];
 let currentStyles = {};
@@ -28,6 +34,65 @@ let currentStyleTree = null;
 let hasSourceMap = false;
 let sourceMapPropertyCount = 0;
 const MAX_HISTORY = 10;
+
+// デフォルト設定
+const DEFAULT_SETTINGS = {
+  enableMediaQuery: true,
+  enableFszMixin: true
+};
+
+// 現在の設定
+let settings = { ...DEFAULT_SETTINGS };
+
+/**
+ * 設定を読み込み
+ */
+async function loadSettings() {
+  try {
+    const result = await chrome.storage.local.get('elementInspectorSettings');
+    if (result.elementInspectorSettings) {
+      settings = { ...DEFAULT_SETTINGS, ...result.elementInspectorSettings };
+    }
+    applySettingsToUI();
+  } catch (error) {
+    console.error('設定読み込みエラー:', error);
+  }
+}
+
+/**
+ * 設定を保存
+ */
+async function saveSettings() {
+  try {
+    await chrome.storage.local.set({ elementInspectorSettings: settings });
+  } catch (error) {
+    console.error('設定保存エラー:', error);
+  }
+}
+
+/**
+ * 設定をUIに反映
+ */
+function applySettingsToUI() {
+  settingMediaQuery.checked = settings.enableMediaQuery;
+  settingFszMixin.checked = settings.enableFszMixin;
+}
+
+/**
+ * 設定パネルの表示/非表示を切り替え
+ */
+function toggleSettingsPanel() {
+  settingsPanel.classList.toggle('hidden');
+}
+
+/**
+ * 設定変更時のハンドラ
+ */
+function onSettingChange() {
+  settings.enableMediaQuery = settingMediaQuery.checked;
+  settings.enableFszMixin = settingFszMixin.checked;
+  saveSettings();
+}
 
 /**
  * 現在の検査対象タブIDを取得
@@ -444,9 +509,41 @@ function displayStyleTree(tree) {
 }
 
 /**
- * CSSプロパティ名をケバブケースからキャメルケースに変換しない（SASSはケバブケース）
+ * font-sizeの値から数値を抽出（px, rem対応）
+ * px: そのまま数値を返す
+ * rem: 10倍して返す（1rem = 10pxと仮定）
+ */
+function extractFontSizeNumber(value) {
+  // px単位
+  const pxMatch = value.match(/^([\d.]+)px$/);
+  if (pxMatch) {
+    const num = parseFloat(pxMatch[1]);
+    return Number.isInteger(num) ? num : num;
+  }
+
+  // rem単位（1rem = 10pxと仮定）
+  const remMatch = value.match(/^([\d.]+)rem$/);
+  if (remMatch) {
+    const remValue = parseFloat(remMatch[1]);
+    const pxValue = remValue * 10; // 2.6rem → 26
+    return Number.isInteger(pxValue) ? pxValue : pxValue;
+  }
+
+  return null;
+}
+
+/**
+ * CSSプロパティをSASS形式にフォーマット
+ * font-size: 24px → @include g.fsz(24); (設定有効時)
  */
 function formatCSSProperty(prop, value) {
+  // font-sizeをg.fsz() mixinに変換（設定が有効な場合）
+  if (settings.enableFszMixin && prop === 'font-size') {
+    const size = extractFontSizeNumber(value);
+    if (size !== null) {
+      return `@include g.fsz(${size});`;
+    }
+  }
   return `${prop}: ${value};`;
 }
 
@@ -484,11 +581,26 @@ function treeToSASS(node, indent = 0) {
     });
   }
 
+  // メディアクエリを出力（@include g.smd() {}, @include g.sm() {}）- 設定が有効な場合のみ
+  if (settings.enableMediaQuery && node.mediaQueries && Object.keys(node.mediaQueries).length > 0) {
+    Object.entries(node.mediaQueries).forEach(([mixin, styles]) => {
+      if (Object.keys(styles).length > 0) {
+        output += '\n';
+        output += `${spaces}  @include ${mixin} {\n`;
+        Object.entries(styles).forEach(([prop, value]) => {
+          output += `${spaces}    ${formatCSSProperty(prop, value)}\n`;
+        });
+        output += `${spaces}  }\n`;
+      }
+    });
+  }
+
   // 子要素を再帰処理
   if (node.children && node.children.length > 0) {
     const hasStyles = Object.keys(node.styles || {}).length > 0;
     const hasPseudo = node.pseudoElements && Object.keys(node.pseudoElements).length > 0;
-    if (hasStyles || hasPseudo) {
+    const hasMedia = settings.enableMediaQuery && node.mediaQueries && Object.keys(node.mediaQueries).length > 0;
+    if (hasStyles || hasPseudo || hasMedia) {
       output += '\n';
     }
     node.children.forEach(child => {
@@ -625,6 +737,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  * 初期化
  */
 async function init() {
+  // 設定を読み込み
+  await loadSettings();
+
   const response = await sendMessageToContent('getStatus');
   if (response) {
     isInspecting = response.isInspecting;
@@ -648,6 +763,11 @@ toggleBtn.addEventListener('click', toggleInspectMode);
 copyCSSBtn.addEventListener('click', copyCSS);
 copySASSBtn.addEventListener('click', copySASS);
 reloadSourceMapBtn.addEventListener('click', reloadSourceMaps);
+
+// 設定関連イベントリスナー
+toggleSettingsBtn.addEventListener('click', toggleSettingsPanel);
+settingMediaQuery.addEventListener('change', onSettingChange);
+settingFszMixin.addEventListener('change', onSettingChange);
 
 // 初期化実行
 init();

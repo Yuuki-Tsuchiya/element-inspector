@@ -12,6 +12,23 @@
       <h1>Element Inspector</h1>
       <div class="controls">
         <button id="toggleInspect" class="btn btn-primary">検査開始</button>
+        <button id="toggleSettings" class="btn btn-icon" title="設定">⚙</button>
+      </div>
+    </div>
+
+    <div id="settingsPanel" class="settings-panel hidden">
+      <div class="settings-header">
+        <span>出力設定</span>
+      </div>
+      <div class="settings-content">
+        <label class="setting-item">
+          <input type="checkbox" id="settingMediaQuery" checked>
+          <span>メディアクエリを取得 (@include g.smd() 等)</span>
+        </label>
+        <label class="setting-item">
+          <input type="checkbox" id="settingFszMixin" checked>
+          <span>font-sizeをmixinに変換 (@include g.fsz())</span>
+        </label>
       </div>
     </div>
 

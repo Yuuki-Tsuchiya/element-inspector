@@ -5,7 +5,8 @@
   "description": "Webページ上の要素をクリックして情報を表示するシンプルな拡張機能",
   "permissions": [
     "activeTab",
-    "scripting"
+    "scripting",
+    "storage"
   ],
   "host_permissions": [
     "<all_urls>"

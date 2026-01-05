@@ -29,6 +29,7 @@
   // CSSルールキャッシュ
   let fullSelectorRules = [];
   let pseudoElementRules = [];
+  let mediaQueryRules = [];
 
   // ============================================================
   // 定数定義
@@ -58,6 +59,7 @@
     'background', 'background-color', 'background-image', 'background-size', 'background-position',
     // ボーダー
     'border', 'border-width', 'border-style', 'border-color', 'border-radius',
+    'border-top', 'border-right', 'border-bottom', 'border-left',
     // その他
     'opacity', 'visibility', 'overflow', 'cursor', 'box-shadow', 'transform', 'transition'
   ];
@@ -170,28 +172,112 @@
   // CSS解析（Source Map連携）
   // ============================================================
 
+  // メディアクエリとmixin名の対応
+  const MEDIA_QUERY_MIXINS = {
+    '(max-width: 767px)': 'g.smd()',
+    '(max-width: 600px)': 'g.sm()',
+    // 追加のブレークポイントがあれば追加
+  };
+
+  /**
+   * メディアクエリ条件からmixin名を取得
+   */
+  function getMixinName(mediaCondition) {
+    // 正規化: スペースを除去して比較
+    const normalized = mediaCondition.replace(/\s+/g, '').toLowerCase();
+    for (const [query, mixin] of Object.entries(MEDIA_QUERY_MIXINS)) {
+      if (normalized.includes(query.replace(/\s+/g, '').toLowerCase())) {
+        return mixin;
+      }
+    }
+    return null;
+  }
+
   /**
    * CSSテキストを解析してセレクタごとのプロパティを抽出
    */
   function parseCSSForSelectors(cssText) {
     const rules = [];
     const pseudoRules = [];
+    const mediaRules = []; // メディアクエリルール
 
     // コメントを先に除去
     let cleanCss = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
 
-    // @で始まるアットルール内のルールも処理するため、
-    // メディアクエリなどは除去せずにそのまま処理する
-    // ただし@keyframesと@font-faceは除去
+    // @keyframesと@font-faceは除去
     cleanCss = cleanCss.replace(/@keyframes\s+[\w-]+\s*\{[^{}]*(\{[^{}]*\}[^{}]*)*\}/g, '');
     cleanCss = cleanCss.replace(/@font-face\s*\{[^}]*\}/g, '');
 
-    // セレクタとプロパティを抽出
-    // パターン: selector { property: value; ... }
+    // メディアクエリを抽出して処理
+    const mediaRegex = /@media\s*([^{]+)\{([\s\S]*?)\}(?=\s*(?:@media|\s*$|[^{}]*\{))/g;
+    let mediaMatch;
+
+    // メディアクエリブロックをマーク
+    const mediaBlocks = [];
+    while ((mediaMatch = mediaRegex.exec(cleanCss)) !== null) {
+      const mediaCondition = mediaMatch[1].trim();
+      const mediaContent = mediaMatch[2];
+      const mixinName = getMixinName(mediaCondition);
+
+      if (mixinName) {
+        mediaBlocks.push({
+          start: mediaMatch.index,
+          end: mediaMatch.index + mediaMatch[0].length,
+          condition: mediaCondition,
+          mixinName: mixinName,
+          content: mediaContent
+        });
+
+        // メディアクエリ内のルールを解析
+        const innerRuleRegex = /([^{}]+)\{([^{}]+)\}/g;
+        let innerMatch;
+        while ((innerMatch = innerRuleRegex.exec(mediaContent)) !== null) {
+          const selectorPart = innerMatch[1].trim();
+          const propertiesPart = innerMatch[2].trim();
+
+          const selectors = selectorPart.split(',').map(s => s.trim()).filter(Boolean);
+
+          const properties = {};
+          const propValueMatches = propertiesPart.matchAll(/([\w-]+)\s*:\s*([^;]+)/g);
+          for (const propMatch of propValueMatches) {
+            const prop = propMatch[1].toLowerCase();
+            const value = propMatch[2].trim();
+            if (IMPORTANT_CSS_PROPERTIES.includes(prop) || prop === 'content') {
+              properties[prop] = value;
+            }
+          }
+
+          if (Object.keys(properties).length === 0) continue;
+
+          for (const selector of selectors) {
+            const cleanSelector = selector.replace(/:[\w-]+(\([^)]*\))?/g, '').trim();
+            if (!cleanSelector) continue;
+            if (cleanSelector === '*' || cleanSelector.startsWith('@')) continue;
+            if (!cleanSelector.includes('.') && !cleanSelector.includes('#')) continue;
+
+            mediaRules.push({
+              fullSelector: cleanSelector,
+              mixinName: mixinName,
+              properties: properties
+            });
+          }
+        }
+      }
+    }
+
+    // メディアクエリブロックを除去してから通常のルールを解析
+    let cssWithoutMedia = cleanCss;
+    // 後ろから除去することでインデックスがずれないようにする
+    for (let i = mediaBlocks.length - 1; i >= 0; i--) {
+      const block = mediaBlocks[i];
+      cssWithoutMedia = cssWithoutMedia.slice(0, block.start) + cssWithoutMedia.slice(block.end);
+    }
+
+    // 通常のルールを解析
     const ruleRegex = /([^{}]+)\{([^{}]+)\}/g;
     let match;
 
-    while ((match = ruleRegex.exec(cleanCss)) !== null) {
+    while ((match = ruleRegex.exec(cssWithoutMedia)) !== null) {
       const selectorPart = match[1].trim();
       const propertiesPart = match[2].trim();
 
@@ -265,7 +351,7 @@
       }
     }
 
-    return { rules, pseudoRules };
+    return { rules, pseudoRules, mediaRules };
   }
 
   /**
@@ -275,6 +361,7 @@
     const sourceMapUrls = [];
     fullSelectorRules = []; // リセット
     pseudoElementRules = []; // リセット
+    mediaQueryRules = []; // リセット
 
     // 1. <link rel="stylesheet">からCSSファイルURLを取得
     const linkElements = document.querySelectorAll('link[rel="stylesheet"]');
@@ -290,9 +377,10 @@
         const match = cssText.match(/\/\*#\s*sourceMappingURL=(.+?)\s*\*\//);
         if (match) {
           // Source Mapがあるファイルのみルールを追加
-          const { rules, pseudoRules } = parseCSSForSelectors(cssText);
+          const { rules, pseudoRules, mediaRules } = parseCSSForSelectors(cssText);
           fullSelectorRules.push(...rules);
           pseudoElementRules.push(...pseudoRules);
+          mediaQueryRules.push(...mediaRules);
 
           let mapUrl = match[1].trim();
           // 相対パスの場合は絶対パスに変換
@@ -318,9 +406,10 @@
       const match = cssText.match(/\/\*#\s*sourceMappingURL=(.+?)\s*\*\//);
       if (match) {
         // Source Mapがあるファイルのみルールを追加
-        const { rules, pseudoRules } = parseCSSForSelectors(cssText);
+        const { rules, pseudoRules, mediaRules } = parseCSSForSelectors(cssText);
         fullSelectorRules.push(...rules);
         pseudoElementRules.push(...pseudoRules);
+        mediaQueryRules.push(...mediaRules);
 
         sourceMapUrls.push({
           cssUrl: 'inline',
@@ -625,6 +714,28 @@
     return pseudoElements;
   }
 
+  /**
+   * 要素に適用されるメディアクエリスタイルを取得
+   */
+  function getMediaQueriesForElement(element) {
+    const mediaQueries = {}; // { 'g.smd()': { prop: value, ... }, ... }
+
+    for (const rule of mediaQueryRules) {
+      if (elementMatchesCssSelector(element, rule.fullSelector)) {
+        const mixin = rule.mixinName;
+        if (!mediaQueries[mixin]) {
+          mediaQueries[mixin] = {};
+        }
+        // プロパティをマージ（値をフォーマット）
+        for (const [prop, value] of Object.entries(rule.properties)) {
+          mediaQueries[mixin][prop] = formatCSSValue(prop, value);
+        }
+      }
+    }
+
+    return mediaQueries;
+  }
+
   // ============================================================
   // スタイル取得
   // ============================================================
@@ -709,6 +820,43 @@
     return value;
   }
 
+  // ショートハンドと個別プロパティの関係
+  const SHORTHAND_MAP = {
+    'padding': ['padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
+    'margin': ['margin-top', 'margin-right', 'margin-bottom', 'margin-left'],
+    'border': ['border-top', 'border-right', 'border-bottom', 'border-left'],
+    'border-width': ['border-top-width', 'border-right-width', 'border-bottom-width', 'border-left-width'],
+    'border-style': ['border-top-style', 'border-right-style', 'border-bottom-style', 'border-left-style'],
+    'border-color': ['border-top-color', 'border-right-color', 'border-bottom-color', 'border-left-color'],
+    'background': ['background-color', 'background-image', 'background-size', 'background-position']
+  };
+
+  /**
+   * ショートハンドプロパティで表現できる個別プロパティを除外
+   * @param {Object} styles - スタイルオブジェクト
+   * @param {Set} sourceProps - Source Mapから取得したプロパティセット
+   * @returns {Object} - フィルタリング後のスタイル
+   */
+  function removeRedundantProperties(styles, sourceProps) {
+    if (!sourceProps || sourceProps.size === 0) return styles;
+
+    const result = { ...styles };
+
+    for (const [shorthand, individuals] of Object.entries(SHORTHAND_MAP)) {
+      // ショートハンドがSource Mapにあり、結果にも含まれている場合
+      if (sourceProps.has(shorthand) && result[shorthand]) {
+        // 個別プロパティがSource Mapに明示的に含まれていなければ削除
+        for (const individual of individuals) {
+          if (!sourceProps.has(individual) && result[individual]) {
+            delete result[individual];
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+
   /**
    * 要素のCSSスタイルを取得（共通処理）
    * @param {Element} element - 対象要素
@@ -740,6 +888,11 @@
 
       // 値をフォーマットして保存（font-sizeを渡してem変換に使用）
       styles[prop] = formatCSSValue(prop, value, fontSize);
+    }
+
+    // ショートハンドと個別プロパティの重複を解消
+    if (propertiesToCheck instanceof Set) {
+      return removeRedundantProperties(styles, propertiesToCheck);
     }
 
     return styles;
@@ -867,6 +1020,9 @@
     // 擬似要素のスタイルを取得
     const pseudoElements = useSourceMap ? getPseudoElementsForElement(element) : {};
 
+    // メディアクエリのスタイルを取得
+    const mediaQueries = useSourceMap ? getMediaQueriesForElement(element) : {};
+
     const children = Array.from(element.children)
       .map(child => buildStyleTree(child, depth + 1, useSourceMap))
       .filter(Boolean);
@@ -879,6 +1035,7 @@
       classes,
       styles,
       pseudoElements,
+      mediaQueries,
       children,
       depth
     };

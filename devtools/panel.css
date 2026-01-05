@@ -71,6 +71,62 @@ h2 {
   background-color: #b3261e;
 }
 
+.btn-icon {
+  padding: 6px 8px;
+  background-color: transparent;
+  color: #5f6368;
+  font-size: 14px;
+}
+
+.btn-icon:hover {
+  background-color: #f1f3f4;
+  color: #202124;
+}
+
+/* 設定パネル */
+.settings-panel {
+  background: #f8f9fa;
+  border: 1px solid #e0e0e0;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.settings-panel.hidden {
+  display: none;
+}
+
+.settings-header {
+  background: #e8eaed;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #5f6368;
+}
+
+.settings-content {
+  padding: 8px 10px;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  font-size: 11px;
+  color: #333;
+  cursor: pointer;
+}
+
+.setting-item input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+
+.setting-item:hover {
+  color: #1a73e8;
+}
+
 .status {
   font-size: 11px;
   color: #666;
@@ -425,6 +481,33 @@ h2 {
   h2 {
     color: #e8eaed;
     border-bottom-color: #3c4043;
+  }
+
+  .btn-icon {
+    color: #9aa0a6;
+  }
+
+  .btn-icon:hover {
+    background-color: #3c4043;
+    color: #e8eaed;
+  }
+
+  .settings-panel {
+    background: #292a2d;
+    border-color: #3c4043;
+  }
+
+  .settings-header {
+    background: #3c4043;
+    color: #9aa0a6;
+  }
+
+  .setting-item {
+    color: #e8eaed;
+  }
+
+  .setting-item:hover {
+    color: #8ab4f8;
   }
 
   .header {
