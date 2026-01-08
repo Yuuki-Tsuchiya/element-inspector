@@ -26,6 +26,7 @@ const toggleSettingsBtn = document.getElementById('toggleSettings');
 const settingsPanel = document.getElementById('settingsPanel');
 const settingMediaQuery = document.getElementById('settingMediaQuery');
 const settingFszMixin = document.getElementById('settingFszMixin');
+const settingHoverMixin = document.getElementById('settingHoverMixin');
 
 let isInspecting = false;
 let history = [];
@@ -38,7 +39,8 @@ const MAX_HISTORY = 10;
 // デフォルト設定
 const DEFAULT_SETTINGS = {
   enableMediaQuery: true,
-  enableFszMixin: true
+  enableFszMixin: true,
+  enableHoverMixin: true
 };
 
 // 現在の設定
@@ -76,6 +78,7 @@ async function saveSettings() {
 function applySettingsToUI() {
   settingMediaQuery.checked = settings.enableMediaQuery;
   settingFszMixin.checked = settings.enableFszMixin;
+  settingHoverMixin.checked = settings.enableHoverMixin;
 }
 
 /**
@@ -91,6 +94,7 @@ function toggleSettingsPanel() {
 function onSettingChange() {
   settings.enableMediaQuery = settingMediaQuery.checked;
   settings.enableFszMixin = settingFszMixin.checked;
+  settings.enableHoverMixin = settingHoverMixin.checked;
   saveSettings();
 }
 
@@ -595,12 +599,23 @@ function treeToSASS(node, indent = 0) {
     });
   }
 
+  // hoverスタイルを出力（@include g.hover() {}）- 設定が有効な場合のみ
+  if (settings.enableHoverMixin && node.hoverStyles && Object.keys(node.hoverStyles).length > 0) {
+    output += '\n';
+    output += `${spaces}  @include g.hover() {\n`;
+    Object.entries(node.hoverStyles).forEach(([prop, value]) => {
+      output += `${spaces}    ${formatCSSProperty(prop, value)}\n`;
+    });
+    output += `${spaces}  }\n`;
+  }
+
   // 子要素を再帰処理
   if (node.children && node.children.length > 0) {
     const hasStyles = Object.keys(node.styles || {}).length > 0;
     const hasPseudo = node.pseudoElements && Object.keys(node.pseudoElements).length > 0;
     const hasMedia = settings.enableMediaQuery && node.mediaQueries && Object.keys(node.mediaQueries).length > 0;
-    if (hasStyles || hasPseudo || hasMedia) {
+    const hasHover = settings.enableHoverMixin && node.hoverStyles && Object.keys(node.hoverStyles).length > 0;
+    if (hasStyles || hasPseudo || hasMedia || hasHover) {
       output += '\n';
     }
     node.children.forEach(child => {
@@ -768,6 +783,7 @@ reloadSourceMapBtn.addEventListener('click', reloadSourceMaps);
 toggleSettingsBtn.addEventListener('click', toggleSettingsPanel);
 settingMediaQuery.addEventListener('change', onSettingChange);
 settingFszMixin.addEventListener('change', onSettingChange);
+settingHoverMixin.addEventListener('change', onSettingChange);
 
 // 初期化実行
 init();

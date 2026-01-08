@@ -30,6 +30,7 @@
   let fullSelectorRules = [];
   let pseudoElementRules = [];
   let mediaQueryRules = [];
+  let hoverRules = []; // :hover擬似クラスルール
 
   // ============================================================
   // 定数定義
@@ -200,6 +201,7 @@
     const rules = [];
     const pseudoRules = [];
     const mediaRules = []; // メディアクエリルール
+    const hoverStyleRules = []; // :hover擬似クラスルール
 
     // コメントを先に除去
     let cleanCss = cssText.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -327,6 +329,25 @@
           continue;
         }
 
+        // :hover擬似クラスを含むセレクタを検出
+        const hoverMatch = selector.match(/:hover/i);
+        if (hoverMatch) {
+          // :hoverを除去して親セレクタを取得
+          const cleanHoverSelector = selector.replace(/:hover/gi, '').replace(/:[\w-]+(\([^)]*\))?/g, '').trim();
+
+          // 汎用セレクタチェック
+          if (!cleanHoverSelector) continue;
+          if (cleanHoverSelector === '*') continue;
+          if (cleanHoverSelector.startsWith('@')) continue;
+          if (!cleanHoverSelector.includes('.') && !cleanHoverSelector.includes('#')) continue;
+
+          hoverStyleRules.push({
+            parentSelector: cleanHoverSelector,
+            properties: propertiesWithValues
+          });
+          continue;
+        }
+
         // 擬似クラス（:hover, :focus等）を除去
         const cleanSelector = selector.replace(/:[\w-]+(\([^)]*\))?/g, '');
 
@@ -351,7 +372,7 @@
       }
     }
 
-    return { rules, pseudoRules, mediaRules };
+    return { rules, pseudoRules, mediaRules, hoverStyleRules };
   }
 
   /**
@@ -362,6 +383,7 @@
     fullSelectorRules = []; // リセット
     pseudoElementRules = []; // リセット
     mediaQueryRules = []; // リセット
+    hoverRules = []; // リセット
 
     // 1. <link rel="stylesheet">からCSSファイルURLを取得
     const linkElements = document.querySelectorAll('link[rel="stylesheet"]');
@@ -377,10 +399,11 @@
         const match = cssText.match(/\/\*#\s*sourceMappingURL=(.+?)\s*\*\//);
         if (match) {
           // Source Mapがあるファイルのみルールを追加
-          const { rules, pseudoRules, mediaRules } = parseCSSForSelectors(cssText);
+          const { rules, pseudoRules, mediaRules, hoverStyleRules } = parseCSSForSelectors(cssText);
           fullSelectorRules.push(...rules);
           pseudoElementRules.push(...pseudoRules);
           mediaQueryRules.push(...mediaRules);
+          hoverRules.push(...hoverStyleRules);
 
           let mapUrl = match[1].trim();
           // 相対パスの場合は絶対パスに変換
@@ -406,10 +429,11 @@
       const match = cssText.match(/\/\*#\s*sourceMappingURL=(.+?)\s*\*\//);
       if (match) {
         // Source Mapがあるファイルのみルールを追加
-        const { rules, pseudoRules, mediaRules } = parseCSSForSelectors(cssText);
+        const { rules, pseudoRules, mediaRules, hoverStyleRules } = parseCSSForSelectors(cssText);
         fullSelectorRules.push(...rules);
         pseudoElementRules.push(...pseudoRules);
         mediaQueryRules.push(...mediaRules);
+        hoverRules.push(...hoverStyleRules);
 
         sourceMapUrls.push({
           cssUrl: 'inline',
@@ -736,6 +760,24 @@
     return mediaQueries;
   }
 
+  /**
+   * 要素に適用される:hoverスタイルを取得
+   */
+  function getHoverStylesForElement(element) {
+    const hoverStyles = {};
+
+    for (const rule of hoverRules) {
+      if (elementMatchesCssSelector(element, rule.parentSelector)) {
+        // プロパティをマージ（値をフォーマット）
+        for (const [prop, value] of Object.entries(rule.properties)) {
+          hoverStyles[prop] = formatCSSValue(prop, value);
+        }
+      }
+    }
+
+    return hoverStyles;
+  }
+
   // ============================================================
   // スタイル取得
   // ============================================================
@@ -1023,6 +1065,9 @@
     // メディアクエリのスタイルを取得
     const mediaQueries = useSourceMap ? getMediaQueriesForElement(element) : {};
 
+    // :hoverスタイルを取得
+    const hoverStyles = useSourceMap ? getHoverStylesForElement(element) : {};
+
     const children = Array.from(element.children)
       .map(child => buildStyleTree(child, depth + 1, useSourceMap))
       .filter(Boolean);
@@ -1036,6 +1081,7 @@
       styles,
       pseudoElements,
       mediaQueries,
+      hoverStyles,
       children,
       depth
     };
@@ -1218,6 +1264,8 @@
         sourceMapPropertiesByCss = {};
         fullSelectorRules = [];
         pseudoElementRules = [];
+        mediaQueryRules = [];
+        hoverRules = [];
         sendResponse({ status: 'ok' });
         break;
 

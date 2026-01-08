@@ -466,6 +466,30 @@ font-sizeプロパティを`@include g.fsz()`形式に変換。
 |------|------|-----------|
 | メディアクエリを取得 | @include g.smd() 等の出力 | 有効 |
 | font-sizeをmixinに変換 | @include g.fsz() への変換 | 有効 |
+| hoverをmixinに変換 | @include g.hover() への変換 | 有効 |
+
+---
+
+### hover mixin変換 ✅ 完了
+
+`:hover`擬似クラスを`@include g.hover() {}`形式に変換。
+
+#### 実装内容
+- [x] CSSの`:hover`擬似クラスを検出
+- [x] `@include g.hover() {}`形式でSASS出力
+- [x] 設定で有効/無効を切り替え可能
+
+#### 出力例
+```scss
+a {
+  background-color: #2f374f;
+
+  @include g.hover() {
+    opacity: 1;
+    background-color: #007474;
+  }
+}
+```
 
 ---
 
